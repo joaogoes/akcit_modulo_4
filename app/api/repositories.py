@@ -2,19 +2,13 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.api.dependencies import get_repo_repository
 from app.models import RepositoryCreate, RepositoryRead, RepositoryUpdate
 from app.repositories import DuplicateRepositoryError, NotFoundError, RepoRepository
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
-
-
-def get_repo_repository(request: Request) -> RepoRepository:
-    """Cria o repositório de dados a partir do `Database` em `app.state.db`."""
-    return RepoRepository(request.app.state.db)
-
-
 Repos = Annotated[RepoRepository, Depends(get_repo_repository)]
 
 _NOT_FOUND = {status.HTTP_404_NOT_FOUND: {"description": "Repositório não encontrado."}}

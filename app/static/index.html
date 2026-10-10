@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard de atividades</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Dashboard de atividades por fase</h1>
+  </header>
+
+  <main class="layout">
+    <section class="card" aria-labelledby="repos-title">
+      <h2 id="repos-title">Repositórios</h2>
+
+      <form id="repo-form" class="repo-form" autocomplete="off">
+        <label>
+          Repositório
+          <input id="repo-name" name="full_name" placeholder="owner/repo ou URL do GitHub" required>
+        </label>
+        <label>
+          Branch <span class="muted">(opcional)</span>
+          <input id="repo-branch" name="branch" placeholder="padrão do repositório">
+        </label>
+        <button type="submit" class="primary">Cadastrar</button>
+      </form>
+
+      <div class="toolbar">
+        <button type="button" id="collect-all">Coletar todos</button>
+        <span class="muted">Marque os repositórios que entram no gráfico.</span>
+      </div>
+
+      <ul id="repo-list" class="repo-list" aria-live="polite"></ul>
+      <p id="repo-empty" class="muted" hidden>Nenhum repositório cadastrado.</p>
+    </section>
+
+    <section class="card" aria-labelledby="dash-title">
+      <div class="card-head">
+        <div>
+          <h2 id="dash-title">Features por fase e veredito</h2>
+          <p id="dash-sub" class="muted"></p>
+        </div>
+        <button type="button" id="toggle-table" aria-pressed="false">Ver como tabela</button>
+      </div>
+
+      <ul id="legend" class="legend" aria-label="Legenda de vereditos"></ul>
+
+      <div id="chart-wrap" class="chart-wrap">
+        <canvas id="chart" role="img" aria-label="Gráfico de barras empilhadas horizontais com o total de features por fase e veredito"></canvas>
+      </div>
+      <div id="table-wrap" hidden></div>
+      <p id="dash-empty" class="muted" hidden>
+        Nenhum relatório no filtro atual. Cadastre um repositório e use “Coletar”.
+      </p>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

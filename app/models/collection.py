@@ -36,7 +36,7 @@ class CollectionRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: int | None = Field(default=None, description="Definido a partir da Release 2.")
     repository_id: int
     status: CollectionStatus
     started_at: datetime
