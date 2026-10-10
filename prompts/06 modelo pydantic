@@ -1,0 +1,5 @@
+Contexto: API em FastAPI para as necessidades do projeto definidas em `01 escopo-mvp.md`.
+Objetivo: Gerar modelos para atender as chamadas necessárias, com tipagem e validações.
+Estilo: Pydantic v2, código limpo e docstrings curtas.
+Resposta: Apenas código de app/models na pasta app/models.
+
