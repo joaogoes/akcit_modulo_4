@@ -9,7 +9,7 @@ from app.models.collection import (
 from app.models.dashboard import Dashboard, DashboardQuery, PhaseSummary, VerdictCount
 from app.models.phase import INVALID_LABEL, Phase
 from app.models.report import Report
-from app.models.repository import RepositoryCreate, RepositoryRead
+from app.models.repository import RepositoryCreate, RepositoryRead, RepositoryUpdate
 
 __all__ = [
     "INVALID_LABEL",
@@ -24,5 +24,6 @@ __all__ = [
     "Report",
     "RepositoryCreate",
     "RepositoryRead",
+    "RepositoryUpdate",
     "VerdictCount",
 ]

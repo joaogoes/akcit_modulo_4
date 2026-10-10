@@ -35,6 +35,19 @@ class RepositoryCreate(BaseModel):
         return value
 
 
+class RepositoryUpdate(BaseModel):
+    """Corpo de PUT /repositories/{id}."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    branch: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="`null` volta à branch padrão do repositório.",
+    )
+
+
 class RepositoryRead(BaseModel):
     """Repositório cadastrado, com o resumo da última coleta."""
 
