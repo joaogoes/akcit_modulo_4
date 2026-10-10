@@ -54,7 +54,7 @@ Objetivo: **uma fase (Requirements) de ponta a ponta**, do cadastro ao gráfico.
   - [ ] CA3: token lido de variável de ambiente; não aparece em tela, logs ou banco.
   - [ ] CA4: nenhuma operação de escrita é feita nos repositórios consultados.
 - [ ] **RT-R1-02 – Banco de dados e gravação atômica** (origem: RNF-06, RNF-07, RF-11, R-03)
-  - [ ] CA1: SQLAlchemy com SQLite; esquema criado pelo ORM (sem Alembic nesta release).
+  - [ ] CA1: `sqlite3` da biblioteca padrão; esquema criado por script SQL idempotente (sem migrações nesta release).
   - [ ] CA2: duas tabelas: repositórios e relatórios (repositório, fase, feature, caminho, `generated`, `verdict`, validade).
   - [ ] CA3: a coleta de um repositório grava em uma única transação; falha injetada no meio da gravação mantém os dados anteriores (teste automatizado).
   - [ ] CA4: o dashboard lê do banco e não dispara coleta ao ser aberto.
@@ -101,7 +101,7 @@ Objetivo: completar as fases e funcionalidades de gestão, e dar robustez e cobe
 ### Requisitos técnicos
 
 - [ ] **RT-R2-01 – Migrações e execuções de coleta** (origem: RNF-07)
-  - [ ] CA1: Alembic adotado; o esquema da Release 1 vira a migração inicial.
+  - [ ] CA1: migrações por scripts SQL versionados, controlados por `PRAGMA user_version`; o esquema da Release 1 vira a migração inicial.
   - [ ] CA2: tabela de execuções de coleta (início, fim, status, erros) criada por migração.
 - [ ] **RT-R2-02 – Resiliência e limite de taxa** (origem: RNF-04, RNF-05)
   - [ ] CA1: falha em um repositório ou arquivo não impede a exibição dos demais; erros reportados por repositório.

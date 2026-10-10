@@ -14,7 +14,7 @@ flowchart LR
         DashSvc["DashboardService<br/>(agregação)"]
         Client["GitHubClient<br/>(interface)"]
         Parser["ReportParser<br/>(generated, verdict)"]
-        Repo["Repositories<br/>(SQLAlchemy)"]
+        Repo["Repositories<br/>(sqlite3)"]
     end
 
     DB[("Banco de dados<br/>SQLite")]

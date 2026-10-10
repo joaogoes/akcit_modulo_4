@@ -6,7 +6,7 @@ Análise de [01 escopo-mvp.md](01%20escopo-mvp.md) e [02 backlog.md](02%20backlo
 
 | Ponto | Decisão aplicada |
 |---|---|
-| Banco com Alembic e três tabelas. | Release 1 com SQLite, esquema criado pelo ORM e duas tabelas (repositórios, relatórios). Alembic e a tabela de execuções passam para a Release 2 (RT-R2-01). |
+| Banco com migrações e três tabelas. | Release 1 com SQLite, esquema criado por script SQL e duas tabelas (repositórios, relatórios). As migrações e a tabela de execuções passam para a Release 2 (RT-R2-01). |
 | Cadastro com remoção, URL e `owner/repo`. | Release 1 aceita só `owner/repo` e não remove. Remoção, URL completa e mensagens de erro específicas passam para a Release 2 (RF-R2-01). |
 | Cinco fases de uma vez. | Release 1 entrega só Requirements, de ponta a ponta. As fases são linhas de uma tabela de configuração; as outras quatro entram na Release 2 (RF-R2-02) sem nova lógica. |
 | Esqueleto web e separação de camadas como itens separados. | Fundidos em RT-R1-03, já com o endpoint JSON. |
