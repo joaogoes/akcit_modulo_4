@@ -2,7 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 
-from app.github import GitHubClient, GitHubError, RateLimitError
+from app.github import GitHubClient, RateLimitError, SourceError
 from app.models import CollectionError, Phase, Report, RepositoryRead
 from app.services.layout import match_report
 from app.services.report_parser import parse_report
@@ -41,7 +41,7 @@ class ReportSource:
                 parsed = parse_report(self._github.get_file(repo.full_name, path, ref))
             except RateLimitError:
                 raise
-            except GitHubError as exc:
+            except SourceError as exc:
                 errors.append(CollectionError(path=path, message=str(exc)))
                 return Report(**base)
             if parsed.generated is None or parsed.verdict is None:

@@ -5,8 +5,8 @@ import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from app.github import GitHubClient, GitHubError
-from app.models import CollectionError, CollectionRead, CollectionStatus, RepositoryRead
+from app.github import GitHubClient, SourceError
+from app.models import CollectionError, CollectionRead, CollectionStatus, Provider, RepositoryRead
 from app.repositories import RepoRepository, ReportRepository
 from app.services.report_source import ReportSource
 
@@ -22,11 +22,15 @@ class CollectionService:
         repos: RepoRepository,
         reports: ReportRepository,
         max_workers: int = 8,
+        azure: GitHubClient | None = None,
     ) -> None:
-        self._github = github
         self._repos = repos
         self._reports = reports
-        self._source = ReportSource(github, max_workers)
+        clients = {Provider.GITHUB: github}
+        if azure is not None:
+            clients[Provider.AZURE_DEVOPS] = azure
+        self._clients = clients
+        self._sources = {provider: ReportSource(client, max_workers) for provider, client in clients.items()}
 
     def collect_many(
         self,
@@ -52,19 +56,26 @@ class CollectionService:
         started = datetime.now(UTC)
         clock = time.perf_counter()
         try:
-            head = self._github.get_head_commit(repo.full_name, repo.branch or "HEAD")
+            client, source = self._provider_access(repo)
+            head = client.get_head_commit(repo.full_name, repo.branch or "HEAD")
             if only_if_changed and self._is_up_to_date(repo, head):
                 return self._unchanged(repo, started, head)
             # Lê tudo pelo SHA, para que a coleta seja um retrato único do commit.
-            files = self._source.find(repo, head)
-            reports, errors = self._source.read_all(repo, head, files)
+            files = source.find(repo, head)
+            reports, errors = source.read_all(repo, head, files)
             self._reports.replace_for_repository(repo.id, reports)
-        except GitHubError as exc:
+        except SourceError as exc:
             return self._failed(repo, started, clock, str(exc))
         except Exception as exc:  # falha de persistência: nada foi alterado
             logger.exception("Falha ao gravar a coleta de %s", repo.full_name)
             return self._failed(repo, started, clock, f"Erro ao gravar os dados: {exc}")
         return self._finish(repo, started, clock, CollectionStatus.SUCCESS, len(files), errors, head)
+
+    def _provider_access(self, repo: RepositoryRead) -> tuple[GitHubClient, ReportSource]:
+        """Cliente e leitor do provedor do repositório."""
+        if repo.provider not in self._clients:
+            raise SourceError(f"O provedor {repo.provider.label} não está configurado.")
+        return self._clients[repo.provider], self._sources[repo.provider]
 
     @staticmethod
     def _is_up_to_date(repo: RepositoryRead, head: str) -> bool:

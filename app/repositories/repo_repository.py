@@ -3,7 +3,7 @@
 import sqlite3
 from datetime import UTC, datetime
 
-from app.models import CollectionStatus, RepositoryCreate, RepositoryRead
+from app.models import CollectionStatus, Provider, RepositoryCreate, RepositoryRead
 from app.repositories.database import Database
 from app.repositories.errors import DuplicateRepositoryError, NotFoundError
 
@@ -11,6 +11,7 @@ from app.repositories.errors import DuplicateRepositoryError, NotFoundError
 def _to_model(row: sqlite3.Row) -> RepositoryRead:
     return RepositoryRead(
         id=row["id"],
+        provider=row["provider"],
         full_name=row["full_name"],
         branch=row["branch"],
         created_at=row["created_at"],
@@ -39,8 +40,8 @@ class RepoRepository:
         """Cadastra um repositório; falha se `full_name` e branch já existirem."""
         try:
             cursor = self._db.execute(
-                "INSERT INTO repositories (full_name, branch, created_at) VALUES (?, ?, ?)",
-                (data.full_name, data.branch, datetime.now(UTC).isoformat()),
+                "INSERT INTO repositories (provider, full_name, branch, created_at) VALUES (?, ?, ?, ?)",
+                (data.provider.value, data.full_name, data.branch, datetime.now(UTC).isoformat()),
             )
         except sqlite3.IntegrityError as exc:
             raise DuplicateRepositoryError(data.full_name, data.branch) from exc
@@ -54,12 +55,13 @@ class RepoRepository:
         return _to_model(row)
 
     def get_by_full_name(
-        self, full_name: str, branch: str | None = None
+        self, full_name: str, branch: str | None = None, provider: Provider = Provider.GITHUB
     ) -> RepositoryRead | None:
-        """Busca por `owner/repo` e branch, sem diferenciar maiúsculas e minúsculas."""
+        """Busca por provedor, nome e branch, sem diferenciar maiúsculas e minúsculas."""
         row = self._db.fetch_one(
-            "SELECT * FROM repositories WHERE full_name = ? AND COALESCE(branch, '') = ?",
-            (full_name, branch or ""),
+            "SELECT * FROM repositories"
+            " WHERE provider = ? AND full_name = ? AND COALESCE(branch, '') = ?",
+            (provider.value, full_name, branch or ""),
         )
         return _to_model(row) if row else None
 

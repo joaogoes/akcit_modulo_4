@@ -5,11 +5,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.repositories.database import Database
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS repositories (
     id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider               TEXT NOT NULL DEFAULT 'github',
     full_name              TEXT NOT NULL COLLATE NOCASE,
     branch                 TEXT,
     created_at             TEXT NOT NULL,
@@ -18,9 +19,9 @@ CREATE TABLE IF NOT EXISTS repositories (
     last_commit_sha        TEXT
 );
 
--- Um repositório pode ser cadastrado uma vez por branch.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_repositories_name_branch
-    ON repositories (full_name COLLATE NOCASE, COALESCE(branch, ''));
+-- Um repositório pode ser cadastrado uma vez por provedor e branch.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_repositories_provider_name_branch
+    ON repositories (provider, full_name COLLATE NOCASE, COALESCE(branch, ''));
 
 CREATE TABLE IF NOT EXISTS reports (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +35,13 @@ CREATE TABLE IF NOT EXISTS reports (
 
 CREATE INDEX IF NOT EXISTS ix_reports_repository_phase
     ON reports (repository_id, phase);
+
+-- Um token por provedor, sempre cifrado (nunca em texto puro).
+CREATE TABLE IF NOT EXISTS credentials (
+    provider   TEXT PRIMARY KEY,
+    secret     BLOB NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 _STATEMENTS = [statement.strip() for statement in SCHEMA.split(";") if statement.strip()]
@@ -50,6 +58,7 @@ def upgrade(db: "Database") -> int:
     if previous < SCHEMA_VERSION:
         _drop_unique_full_name(db)
         _add_missing_columns(db)
+        db.execute("DROP INDEX IF EXISTS ux_repositories_name_branch")  # substituído por um índice com o provedor
     with db.transaction() as conn:
         for statement in _STATEMENTS:
             conn.execute(statement)
@@ -60,8 +69,12 @@ def upgrade(db: "Database") -> int:
 def _add_missing_columns(db: "Database") -> None:
     """Acrescenta colunas criadas depois da primeira versão do esquema."""
     columns = {row["name"] for row in db.fetch_all("PRAGMA table_info(repositories)")}
-    if columns and "last_commit_sha" not in columns:
+    if not columns:
+        return
+    if "last_commit_sha" not in columns:
         db.execute("ALTER TABLE repositories ADD COLUMN last_commit_sha TEXT")
+    if "provider" not in columns:
+        db.execute("ALTER TABLE repositories ADD COLUMN provider TEXT NOT NULL DEFAULT 'github'")
 
 
 def _drop_unique_full_name(db: "Database") -> None:

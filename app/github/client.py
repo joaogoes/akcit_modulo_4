@@ -1,6 +1,7 @@
 """Interface do cliente GitHub e implementação HTTP (RNF-01, RNF-13)."""
 
 import json
+from collections.abc import Callable
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -35,12 +36,12 @@ class HttpGitHubClient:
 
     def __init__(
         self,
-        token: str | None = None,
+        token: str | Callable[[], str | None] | None = None,
         base_url: str = "https://api.github.com",
         raw_url: str = "https://raw.githubusercontent.com",
         timeout: float = 30.0,
     ) -> None:
-        self._token = token
+        self._token_source = token if callable(token) else (lambda: token)
         self._base_url = base_url.rstrip("/")
         self._raw_url = raw_url.rstrip("/")
         self._timeout = timeout
@@ -71,7 +72,7 @@ class HttpGitHubClient:
         Sem token só repositórios públicos são acessíveis, e a cota de 60
         requisições/hora da API não comportaria um arquivo por chamada.
         """
-        if not self._token:
+        if not self._token_source():
             raw_path = f"{full_name}/{quote(ref, safe='')}/{quote(path)}"
             return self._fetch(f"{self._raw_url}/{raw_path}", {}).decode("utf-8-sig", errors="replace")
         url = f"/repos/{full_name}/contents/{quote(path)}?ref={quote(ref, safe='')}"
@@ -84,8 +85,8 @@ class HttpGitHubClient:
             "User-Agent": "dashboard-atividades",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+        if token := self._token_source():
+            headers["Authorization"] = f"Bearer {token}"
         return self._fetch(self._base_url + path, headers)
 
     def _fetch(self, url: str, headers: dict[str, str]) -> bytes:

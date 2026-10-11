@@ -41,6 +41,23 @@ LEGACY_V1 = """
 """
 
 
+LEGACY_V2 = """
+    CREATE TABLE repositories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT NOT NULL COLLATE NOCASE, branch TEXT, created_at TEXT NOT NULL,
+        last_collected_at TEXT, last_collection_status TEXT, last_commit_sha TEXT);
+    CREATE UNIQUE INDEX ux_repositories_name_branch
+        ON repositories (full_name COLLATE NOCASE, COALESCE(branch, ''));
+    CREATE TABLE reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repository_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+        phase TEXT NOT NULL, feature TEXT NOT NULL, path TEXT NOT NULL,
+        generated TEXT, verdict TEXT);
+    INSERT INTO repositories (full_name, created_at, last_commit_sha) VALUES ('acme/app', 'x', 'abc');
+    PRAGMA user_version = 2;
+"""
+
+
 def insert_repo(conn: sqlite3.Connection, name: str, branch: str | None = None) -> None:
     conn.execute(
         "INSERT INTO repositories (full_name, branch, created_at) VALUES (?, ?, 'x')", (name, branch)
@@ -178,3 +195,38 @@ class TestMigration:
             assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
             tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "repositories_new" not in tables
+
+    def test_version_two_database_gains_the_provider_and_a_provider_aware_index(self, tmp_path):
+        path = tmp_path / "v2.db"
+        build_legacy(path, LEGACY_V2)
+
+        database = Database(str(path))
+        assert database.init_schema() == 2
+        assert "provider" in columns(database, "repositories")
+        with database.transaction() as conn:
+            row = conn.execute("SELECT provider, last_commit_sha FROM repositories").fetchone()
+            indexes = {r["name"] for r in conn.execute("PRAGMA index_list(repositories)")}
+            conn.execute("INSERT INTO repositories (provider, full_name, created_at) VALUES ('azure_devops', 'acme/app', 'x')")
+        assert (row["provider"], row["last_commit_sha"]) == ("github", "abc")  # dados e provedor padrão preservados
+        assert "ux_repositories_provider_name_branch" in indexes
+        assert "ux_repositories_name_branch" not in indexes
+
+    def test_same_name_is_unique_only_within_a_provider(self, db):
+        with db.transaction() as conn:
+            conn.execute("INSERT INTO repositories (provider, full_name, created_at) VALUES ('github', 'a/b', 'x')")
+            conn.execute("INSERT INTO repositories (provider, full_name, created_at) VALUES ('azure_devops', 'a/b', 'x')")
+        with pytest.raises(sqlite3.IntegrityError), db.transaction() as conn:
+            conn.execute("INSERT INTO repositories (provider, full_name, created_at) VALUES ('azure_devops', 'A/B', 'x')")
+
+    def test_version_three_database_gains_the_credentials_table_and_keeps_data(self, tmp_path):
+        path = tmp_path / "v3.db"
+        build_legacy(path, LEGACY_V2.replace("full_name TEXT NOT NULL COLLATE NOCASE,", "provider TEXT NOT NULL DEFAULT 'github', full_name TEXT NOT NULL COLLATE NOCASE,")
+                     .replace("ux_repositories_name_branch", "ux_repositories_provider_name_branch")
+                     .replace("(full_name COLLATE NOCASE", "(provider, full_name COLLATE NOCASE")
+                     .replace("user_version = 2", "user_version = 3"))
+
+        database = Database(str(path))
+        assert database.init_schema() == 3
+        assert columns(database, "credentials") == {"provider", "secret", "updated_at"}
+        with database.transaction() as conn:
+            assert conn.execute("SELECT full_name FROM repositories").fetchone()[0] == "acme/app"
