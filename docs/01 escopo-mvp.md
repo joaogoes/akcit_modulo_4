@@ -45,6 +45,8 @@ Cada relatório contém dois campos, lidos do conteúdo do arquivo:
 
 - **RF-19** Cada painel do dashboard tem um botão **Atualizar**, que coleta os dados do repositório somente se o último commit do branch for diferente do último commit coletado com sucesso. Sem novo commit, nada é lido e o usuário é informado. O commit coletado é armazenado e exibido no painel. A coleta lê todos os arquivos pelo SHA desse commit, para que os dados correspondam a um único retrato do repositório.
 - **RF-20** O dashboard tem o modo **Ver como tendência**, que exibe por repositório um gráfico de linhas empilhadas com a evolução das features por veredito ao longo do tempo, para uma fase escolhida pelo usuário (padrão: Tests). Os pontos são semanais, do primeiro ao último relatório válido da fase. Em cada ponto, vale o relatório válido mais recente de cada feature até aquela data; features sem relatório válido ainda não entram na contagem. O cálculo usa só os relatórios já armazenados (`generated` e `verdict`) e não faz chamadas ao GitHub. Todos os gráficos de tendência usam o mesmo eixo de datas, do primeiro ao último relatório válido da fase entre todos os repositórios, para que possam ser comparados; features só entram na contagem a partir de seu primeiro relatório. Relatórios sem `generated` válido ficam fora da linha do tempo.
+- **RF-21** O cadastro aceita repositórios do **Azure DevOps** além dos do GitHub. O usuário informa a URL do repositório (`https://dev.azure.com/<organização>/<projeto>/_git/<repositório>`, com ou sem usuário na frente, ou o formato antigo `https://<organização>.visualstudio.com/...`), e o sistema detecta o provedor e guarda o nome como `organização/projeto/repositório`. A coleta, a atualização por commit, o dashboard e a tendência funcionam como nos repositórios do GitHub, com a mesma estrutura de pastas e os mesmos campos de relatório. O acesso usa um token de acesso pessoal (PAT) com permissão de leitura de código (`Code: Read`), lido da variável `AZURE_DEVOPS_TOKEN`; sem credenciais, o serviço pede login e a aplicação mostra uma mensagem que orienta a definir o token.
+- **RF-22** Os tokens de acesso (GitHub e Azure DevOps) podem ser informados na interface, na janela da engrenagem, **um por provedor**, e ficam salvos no banco de dados. No Windows, o token é cifrado com o DPAPI (`CryptProtectData`): só o mesmo usuário do Windows, na mesma máquina, consegue lê-lo. Em outros sistemas não há armazenamento protegido, e a aplicação orienta o uso das variáveis de ambiente. A tela mostra apenas se há token e de onde ele vem (banco ou variável de ambiente), e permite substituí-lo ou removê-lo; o valor nunca é exibido de novo. O token do banco vale a partir da requisição seguinte, sem reiniciar a aplicação, e tem prioridade sobre `GITHUB_TOKEN` e `AZURE_DEVOPS_TOKEN`.
 
 ### 3.3 Dashboard
 
@@ -59,7 +61,7 @@ Cada relatório contém dois campos, lidos do conteúdo do arquivo:
 ## 4. Requisitos não funcionais
 
 - **RNF-01 Acesso ao GitHub:** leitura via API do GitHub (REST ou GraphQL). Autenticação por Personal Access Token com escopo mínimo de leitura (`repo:read` / `contents:read`), configurado fora do código-fonte (variável de ambiente ou arquivo de configuração local).
-- **RNF-02 Segurança:** o token nunca é exibido na interface, nem gravado em logs ou no repositório de código da aplicação. Operações exclusivamente de leitura nos repositórios consultados.
+- **RNF-02 Segurança:** o token nunca é exibido na interface, nem gravado em logs ou no repositório de código da aplicação. Quando salvo no banco (RF-22), fica cifrado com o DPAPI do Windows, nunca é devolvido pela API e não é repetido em mensagens de erro nem em respostas de validação. Operações exclusivamente de leitura nos repositórios consultados.
 - **RNF-03 Desempenho:** a coleta de até 10 repositórios, com até 200 relatórios cada, termina em até 60 s em rede corporativa típica. A coleta usa requisições em paralelo, respeitando o limite de taxa da API. Para caber no limite de 5.000 requisições/hora da API REST com token, a descoberta de arquivos usa a API de árvore do Git (uma chamada por repositório, em modo recursivo) e a leitura de conteúdo usa requisições condicionais (`ETag`/`If-None-Match`), que não consomem cota quando o arquivo não mudou. A viabilidade dessa estratégia é validada em protótipo antes da implementação (seção 8, R-01). A medição usa um repositório sintético com a carga do requisito (RNF-12).
 - **RNF-04 Resiliência:** a falha de um repositório ou arquivo não impede a exibição dos demais. Os erros são reportados por repositório.
 - **RNF-05 Limite de taxa:** o sistema detecta resposta de rate limit, informa o usuário e indica quando tentar novamente.
@@ -100,7 +102,7 @@ Cada relatório contém dois campos, lidos do conteúdo do arquivo:
 - Exportação (PDF, imagem, CSV) e impressão.
 - Notificações, alertas e agendamento automático de coleta.
 - Webhooks do GitHub e atualização em tempo real.
-- Provedores que não sejam o GitHub (GitLab, Azure DevOps, Bitbucket).
+- Provedores que não sejam o GitHub ou o Azure DevOps (GitLab, Bitbucket).
 - Validação de conteúdo ou de qualidade dos relatórios além da extração de `generated` e `verdict`.
 - Execução dos pipelines de validação que geram os relatórios.
 - Implantação em nuvem, alta disponibilidade e escalabilidade horizontal.
@@ -116,7 +118,7 @@ Cada relatório contém dois campos, lidos do conteúdo do arquivo:
 4a. Uma feature de mesmo nome em 2 repositórios conta duas vezes.
 5. Remover um repositório atualiza o gráfico sem nova coleta e apaga seus relatórios do banco.
 5a. Após reiniciar a aplicação, repositórios cadastrados e o último resultado coletado continuam disponíveis no dashboard.
-6. O token do GitHub não aparece em tela, logs ou banco de dados.
+6. Os tokens do GitHub e do Azure DevOps não aparecem em tela nem em logs, e no banco de dados só existem cifrados (nunca em texto puro).
 7. Uma coleta interrompida no meio da gravação deixa os dados do repositório iguais aos da coleta anterior.
 
 ## 8. Riscos técnicos e mitigações

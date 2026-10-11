@@ -4,13 +4,13 @@ Legenda: **RF** = requisito funcional, **RT** = requisito técnico. A coluna "or
 Cada item só é marcado como concluído (`[x]`) quando todos os seus critérios de aceite (CA) forem atendidos. Itens **parciais** ficam abertos, com os CAs já atendidos marcados e uma nota sobre o que falta.
 O corte dos releases segue a revisão em [05 revisão de planejamento.md](05%20revis%C3%A3o%20de%20planejamento.md).
 
-**Situação em 10/10/2026** (253 testes passando, 100% de cobertura de linhas de `app/`)
+**Situação em 10/10/2026** (351 testes passando, 100% de cobertura de linhas de `app/`)
 
 | Bloco | Concluídos | Parciais | Pendentes | Substituídos |
 |---|---|---|---|---|
 | Pré-requisitos | RT-R0-02 | RT-R0-03 | RT-R0-01 | – |
 | Release 1 – Core | RF-R1-01, RF-R1-02, RF-R1-04, RT-R1-02, RT-R1-03, RT-R1-04 | RF-R1-03, RT-R1-01 | – | – |
-| Release 2 – Qualidade | RF-R2-03, RF-R2-04, RF-R2-06, RF-R2-07, RT-R2-03 | RF-R2-01, RF-R2-02, RT-R2-01, RT-R2-02, RT-R2-04 | – | RF-R2-05 |
+| Release 2 – Qualidade | RF-R2-03, RF-R2-04, RF-R2-06, RF-R2-07, RF-R2-09, RT-R2-03 | RF-R2-01, RF-R2-02, RF-R2-08, RT-R2-01, RT-R2-02, RT-R2-04 | – | RF-R2-05 |
 | Release 3 – Entrega final | RF-R3-03 | RF-R3-01, RF-R3-02, RT-R3-02, RT-R3-04 | RT-R3-01, RT-R3-03 | – |
 
 ## Pré-requisitos (antes da Release 1)
@@ -60,7 +60,7 @@ Objetivo: **uma fase de ponta a ponta**, do cadastro ao gráfico. O código já 
 - [ ] **RT-R1-01 – Acesso ao GitHub atrás de interface** (origem: RNF-01, RNF-02, RNF-13) — *parcial*
   - [x] CA1: interface `GitHubClient` (`get_default_branch`, `get_head_commit`, `list_files`, `get_file`) com implementação HTTP e implementação em memória.
   - [x] CA2: a implementação real usa a API de árvore do Git.
-  - [ ] CA3: token lido de variável de ambiente; não aparece em tela, logs ou banco. *O código não o expõe, mas não há teste nem revisão que comprove (ver RT-R3-03).*
+  - [x] CA3: o token vem do banco (cifrado) ou de variável de ambiente e não aparece em tela, logs nem respostas da API (testes automatizados; a revisão formal continua em RT-R3-03).
   - [x] CA4: nenhuma operação de escrita é feita nos repositórios consultados.
 - [x] **RT-R1-02 – Banco de dados e gravação atômica** (origem: RNF-06, RNF-07, RF-11, R-03)
   - [x] CA1: `sqlite3` da biblioteca padrão; esquema criado por script SQL idempotente.
@@ -111,6 +111,18 @@ Objetivo: completar as fases e funcionalidades de gestão, e dar robustez e cobe
   - [x] CA2: com o mesmo commit da última coleta bem-sucedida, nada é lido e a mensagem informa que não há novos commits.
   - [x] CA3: com commit diferente, a coleta ocorre e o novo commit é gravado e exibido no painel.
   - [x] CA4: coleta que falhou não altera o commit armazenado, e o próximo **Atualizar** tenta de novo.
+- [ ] **RF-R2-08 – Repositórios do Azure DevOps** (origem: RF-21) — *parcial*: falta validar contra um repositório real
+  - [x] CA1: a URL do Azure DevOps (`dev.azure.com`, com ou sem usuário, ou `*.visualstudio.com`) é aceita e normalizada para `organização/projeto/repositório`; endereços de outros provedores são recusados com orientação.
+  - [x] CA2: a coleta, o botão **Atualizar** (por commit), o dashboard e a tendência funcionam para repositórios do Azure DevOps.
+  - [x] CA3: o token vem de `AZURE_DEVOPS_TOKEN` (Basic com PAT); a falta de autenticação gera uma mensagem que pede o token.
+  - [ ] CA4: validado contra um repositório real do Azure DevOps. *Só foi testado com respostas simuladas e com a sondagem anônima da API, que confirmou o redirecionamento para o login.*
+
+- [x] **RF-R2-09 – Tokens por provedor, cifrados no banco** (origem: RF-22, RNF-02)
+  - [x] CA1: a janela da engrenagem permite salvar, substituir e remover o token de cada provedor; a tela mostra só o estado (banco, variável de ambiente ou não configurado).
+  - [x] CA2: o token é cifrado com o DPAPI do Windows; o arquivo do banco não contém o valor em claro (conferido com o DPAPI real).
+  - [x] CA3: a API nunca devolve o token, e os erros de validação e os logs não o repetem (testes automatizados).
+  - [x] CA4: o token do banco vale na requisição seguinte, sem reiniciar, e tem prioridade sobre a variável de ambiente.
+  - [x] CA5: onde não há DPAPI, salvar é recusado com orientação a usar as variáveis de ambiente.
 
 ### Requisitos técnicos
 

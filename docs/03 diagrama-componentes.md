@@ -9,14 +9,14 @@ Componentes da aplicação como estão implementados (veja [01 escopo-mvp.md](01
 ```mermaid
 flowchart LR
     Browser["Navegador<br/>app/static + Chart.js"]
-    GitHub["GitHub<br/>API e raw.githubusercontent.com"]
+    GitHub["GitHub e Azure DevOps<br/>APIs REST (e raw.githubusercontent.com)"]
 
     subgraph App["Aplicação FastAPI (app/)"]
         API["api<br/>repositories · collections<br/>dashboard · trend"]
         Collect["CollectionService<br/>(orquestra a coleta)"]
         Source["ReportSource<br/>(encontra e lê relatórios)"]
         Parser["parse_report + layout<br/>(fases, pastas, generated, verdict)"]
-        Client["GitHubClient<br/>(interface)"]
+        Client["GitHubClient (interface)<br/>um cliente por provedor"]
         Dash["DashboardService"]
         Trend["TrendService"]
         Shared["selection + verdicts<br/>(ids e rótulos comuns)"]
@@ -62,5 +62,5 @@ flowchart LR
 **Pontos de projeto**
 - O dashboard e a tendência nunca chamam o GitHub; só a coleta chama, o que mantém a cota da API sob controle.
 - A coleta lê todos os arquivos pelo SHA do commit (A3), então os dados são um retrato único dele. Com `only_if_changed`, o mesmo SHA da última coleta bem-sucedida encerra o fluxo em A5, sem ler arquivos.
-- `GitHubClient` é uma interface: a versão HTTP é usada em produção e a versão em memória, nos testes.
+- `GitHubClient` é uma interface: o serviço de coleta escolhe o cliente pelo provedor do repositório (GitHub ou Azure DevOps). As versões HTTP são usadas em produção e a versão em memória, nos testes.
 - A gravação (A8) troca todos os relatórios do repositório em uma única transação; se falhar, os dados anteriores permanecem.
