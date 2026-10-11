@@ -10,16 +10,18 @@ const PHASE_LABELS = {
 const INVALID_LABEL = "Inválido";
 const OTHER_LABEL = "Outros";
 const MAX_SLOTS = 8;
+// Vereditos conhecidos usam cores com sentido (azul, âmbar, vermelho); os demais seguem a ordem da paleta.
+const PREFERRED_SLOTS = new Map([["aprovado", 0], ["aprovado com ressalvas", 3], ["reprovado", 7]]);
 
 const $ = (id) => document.getElementById(id);
 const state = {
   repos: [],
-  selected: new Set(), // ids marcados no filtro
-  known: new Set(), // ids já vistos, para marcar repositórios novos
-  dashboard: null,
+  dashboards: new Map(), // id do repositório -> resposta de /api/dashboard
   slots: new Map(), // veredito -> posição de cor; fixa enquanto a página está aberta
-  chart: null,
-  table: false,
+  charts: new Map(), // id do repositório -> instância do Chart.js
+  mode: "chart", // chart | table | trend
+  trendPhase: "tests",
+  trends: new Map(), // id do repositório -> resposta de /api/trend
   busy: new Set(),
 };
 
@@ -56,7 +58,11 @@ function toast(message, isError = false) {
   setTimeout(() => el.remove(), isError ? 9000 : 5000);
 }
 
-/* ---------- Repositórios ---------- */
+/* ---------- Utilitários ---------- */
+
+function repoLabel(repo) {
+  return repo.branch ? `${repo.full_name} @ ${repo.branch}` : repo.full_name;
+}
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -68,10 +74,30 @@ function statusText(repo) {
   if (repo.last_collection_status === "failed") {
     return { text: `✕ Última coleta falhou em ${when}`, cls: "status-failed" };
   }
-  return { text: `✓ Coletado em ${when}`, cls: "status-ok" };
+  const commit = repo.last_commit_sha ? ` · commit ${repo.last_commit_sha.slice(0, 7)}` : "";
+  return { text: `✓ Coletado em ${when}${commit}`, cls: "status-ok" };
 }
 
-function renderRepos() {
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/* ---------- Diálogo de repositórios (engrenagem) ---------- */
+
+const dialog = $("settings");
+
+function openSettings() {
+  dialog.append($("toasts")); // o diálogo cobre a página; as mensagens precisam ficar acima dele
+  dialog.showModal();
+  $("repo-name").focus();
+}
+
+dialog.addEventListener("close", () => document.body.append($("toasts")));
+dialog.addEventListener("click", (event) => {
+  if (event.target === dialog) dialog.close(); // clique no fundo
+});
+
+function renderRepoList() {
   const list = $("repo-list");
   list.replaceChildren();
   $("repo-empty").hidden = state.repos.length > 0;
@@ -79,29 +105,17 @@ function renderRepos() {
   for (const repo of state.repos) {
     const li = document.createElement("li");
 
-    const check = document.createElement("input");
-    check.type = "checkbox";
-    check.checked = state.selected.has(repo.id);
-    check.setAttribute("aria-label", `Exibir ${repo.full_name} no gráfico`);
-    check.addEventListener("change", () => {
-      if (check.checked) state.selected.add(repo.id);
-      else state.selected.delete(repo.id);
-      refreshDashboard();
-    });
-
     const name = document.createElement("span");
     name.className = "repo-name";
-    name.textContent = repo.full_name;
+    name.textContent = repoLabel(repo);
 
     const meta = document.createElement("span");
     meta.className = "repo-meta";
-    const st = statusText(repo);
-    const branch = repo.branch ? ` · branch ${repo.branch}` : "";
-    meta.innerHTML = "";
-    const stEl = document.createElement("span");
-    stEl.className = st.cls;
-    stEl.textContent = st.text;
-    meta.append(stEl, document.createTextNode(branch));
+    const status = statusText(repo);
+    const statusEl = document.createElement("span");
+    statusEl.className = status.cls;
+    statusEl.textContent = status.text;
+    meta.append(statusEl);
 
     const actions = document.createElement("span");
     actions.className = "repo-actions";
@@ -114,26 +128,14 @@ function renderRepos() {
     remove.type = "button";
     remove.className = "danger";
     remove.textContent = "Remover";
+    remove.disabled = state.busy.size > 0;
     remove.addEventListener("click", () => removeRepo(repo));
     actions.append(collect, remove);
 
-    li.append(check, name, meta, actions);
+    li.append(name, meta, actions);
     list.append(li);
   }
   $("collect-all").disabled = state.busy.size > 0 || state.repos.length === 0;
-}
-
-async function loadRepos() {
-  state.repos = await api("GET", "/repositories");
-  for (const repo of state.repos) {
-    if (!state.known.has(repo.id)) {
-      state.known.add(repo.id);
-      state.selected.add(repo.id);
-    }
-  }
-  const ids = new Set(state.repos.map((repo) => repo.id));
-  for (const id of [...state.selected]) if (!ids.has(id)) state.selected.delete(id);
-  renderRepos();
 }
 
 async function addRepo(event) {
@@ -143,36 +145,39 @@ async function addRepo(event) {
   try {
     const repo = await api("POST", "/repositories", { full_name, branch });
     $("repo-form").reset();
-    toast(`Cadastrado: ${repo.full_name}. Use “Coletar” para ler os relatórios.`);
-    await loadRepos();
-    await refreshDashboard();
+    toast(`Cadastrado: ${repoLabel(repo)}. Use “Coletar” para ler os relatórios.`);
+    await refreshAll();
   } catch (error) {
     toast(error.message, true);
   }
 }
 
 async function removeRepo(repo) {
-  if (!confirm(`Remover ${repo.full_name} e seus relatórios coletados?`)) return;
+  if (!confirm(`Remover ${repoLabel(repo)} e seus relatórios coletados?`)) return;
   try {
     await api("DELETE", `/repositories/${repo.id}`);
-    toast(`Removido: ${repo.full_name}.`);
-    await loadRepos();
-    await refreshDashboard();
+    toast(`Removido: ${repoLabel(repo)}.`);
+    await refreshAll();
   } catch (error) {
     toast(error.message, true);
   }
 }
 
-async function collectRepos(ids) {
+/** Coleta os repositórios; com `onlyIfChanged`, só os que têm commit novo. */
+async function collectRepos(ids, onlyIfChanged = false) {
   const targets = ids || state.repos.map((repo) => repo.id);
   targets.forEach((id) => state.busy.add(id));
-  renderRepos();
+  renderRepoList();
+  renderPage();
   try {
-    const results = await api("POST", "/collections", ids ? { repository_ids: ids } : undefined);
+    const body = ids || onlyIfChanged ? { repository_ids: ids, only_if_changed: onlyIfChanged } : undefined;
+    const results = await api("POST", "/collections", body);
     for (const result of results) {
       const repo = state.repos.find((item) => item.id === result.repository_id);
-      const name = repo ? repo.full_name : `#${result.repository_id}`;
-      if (result.status === "failed") {
+      const name = repo ? repoLabel(repo) : `#${result.repository_id}`;
+      if (result.status === "unchanged") {
+        toast(`${name}: sem novos commits desde a última coleta.`);
+      } else if (result.status === "failed") {
         toast(`${name}: ${result.errors.map((e) => e.message).join(" ")}`, true);
       } else if (result.errors.length) {
         toast(`${name}: ${result.files_read} relatórios lidos, ${result.errors.length} com problema.`, true);
@@ -184,99 +189,183 @@ async function collectRepos(ids) {
     toast(error.message, true);
   } finally {
     state.busy.clear();
-    await loadRepos();
-    await refreshDashboard();
+    await refreshAll();
   }
 }
 
-/* ---------- Dashboard ---------- */
+/* ---------- Dados ---------- */
 
-async function refreshDashboard() {
-  const params = new URLSearchParams();
-  if (state.selected.size === 0) {
-    state.dashboard = { phases: [], repository_ids: [], last_collected_at: null };
-  } else {
-    state.selected.forEach((id) => params.append("repository_ids", id));
-    try {
-      state.dashboard = await api("GET", `/api/dashboard?${params}`);
-    } catch (error) {
-      toast(error.message, true);
-      return;
+async function refreshAll() {
+  state.repos = await api("GET", "/repositories");
+  const entries = await Promise.all(
+    state.repos.map(async (repo) => [repo.id, await api("GET", `/api/dashboard?repository_ids=${repo.id}`)])
+  );
+  state.dashboards = new Map(entries);
+  if (state.mode === "trend") await loadTrends();
+  renderRepoList();
+  renderPage();
+}
+
+async function loadTrends() {
+  const entries = await Promise.all(
+    state.repos.map(async (repo) => [
+      repo.id,
+      await api("GET", `/api/trend?repository_ids=${repo.id}&phase=${state.trendPhase}`),
+    ])
+  );
+  state.trends = new Map(entries);
+}
+
+/* ---------- Séries ---------- */
+
+const RESERVED_SLOTS = new Set(PREFERRED_SLOTS.values());
+
+/** Posição de cor de um veredito: fixa depois de atribuída, para a cor não mudar com a lista. */
+function ensureSlot(verdict) {
+  if (state.slots.has(verdict)) return state.slots.get(verdict);
+  let slot = PREFERRED_SLOTS.get(verdict.trim().toLowerCase());
+  if (slot === undefined) {
+    const used = new Set(state.slots.values());
+    slot = 0;
+    while (slot < MAX_SLOTS && (used.has(slot) || RESERVED_SLOTS.has(slot))) slot++;
+    if (slot >= MAX_SLOTS) slot = state.slots.size;
+  }
+  state.slots.set(verdict, slot);
+  return slot;
+}
+
+function assignSlots() {
+  const found = new Set();
+  for (const dashboard of state.dashboards.values()) {
+    for (const phase of dashboard.phases) {
+      for (const item of phase.verdicts) if (item.verdict !== INVALID_LABEL) found.add(item.verdict);
     }
   }
-  renderDashboard();
+  for (const verdict of [...found].sort((a, b) => a.localeCompare(b, "pt-BR"))) ensureSlot(verdict);
+  return [...found].sort((a, b) => state.slots.get(a) - state.slots.get(b));
 }
 
-function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function colorOf(verdict) {
+  if (verdict === INVALID_LABEL) return "--invalid";
+  if (verdict === OTHER_LABEL) return "--other";
+  return `--s${(ensureSlot(verdict) % MAX_SLOTS) + 1}`;
 }
 
-/** Séries do gráfico: um veredito por série, com cor fixa pela ordem da primeira aparição. */
-function buildSeries(dashboard) {
-  const phases = dashboard.phases;
-  const verdicts = new Map();
-  for (const phase of phases) {
-    for (const item of phase.verdicts) {
-      if (item.verdict !== INVALID_LABEL && !verdicts.has(item.verdict)) verdicts.set(item.verdict, true);
-    }
-  }
-  for (const verdict of [...verdicts.keys()].sort((a, b) => a.localeCompare(b, "pt-BR"))) {
-    if (!state.slots.has(verdict)) state.slots.set(verdict, state.slots.size);
-  }
-  const named = [...verdicts.keys()].sort((a, b) => state.slots.get(a) - state.slots.get(b));
-  const shown = named.slice(0, MAX_SLOTS);
-  const folded = new Set(named.slice(MAX_SLOTS));
-
+/** Séries de um gráfico: um veredito por série, com os vereditos além do oitavo agrupados em "Outros". */
+function buildSeries(dashboard, ordered) {
+  const shown = ordered.slice(0, MAX_SLOTS);
+  const folded = new Set(ordered.slice(MAX_SLOTS));
   const countOf = (phase, wanted) =>
     phase.verdicts.filter((item) => wanted(item.verdict)).reduce((sum, item) => sum + item.count, 0);
 
   const series = shown.map((verdict) => ({
     label: verdict,
-    color: `--s${(state.slots.get(verdict) % MAX_SLOTS) + 1}`,
-    data: phases.map((phase) => countOf(phase, (v) => v === verdict)),
+    data: dashboard.phases.map((phase) => countOf(phase, (v) => v === verdict)),
   }));
   if (folded.size) {
-    series.push({ label: OTHER_LABEL, color: "--other", data: phases.map((p) => countOf(p, (v) => folded.has(v))) });
+    series.push({ label: OTHER_LABEL, data: dashboard.phases.map((p) => countOf(p, (v) => folded.has(v))) });
   }
-  const invalid = phases.map((phase) => countOf(phase, (v) => v === INVALID_LABEL));
-  if (invalid.some((n) => n > 0)) series.push({ label: INVALID_LABEL, color: "--invalid", data: invalid });
-  return series;
+  series.push({ label: INVALID_LABEL, data: dashboard.phases.map((p) => countOf(p, (v) => v === INVALID_LABEL)) });
+  return series.filter((item) => item.data.some((n) => n > 0));
 }
 
-function renderDashboard() {
-  const dashboard = state.dashboard;
-  const series = buildSeries(dashboard);
-  const total = dashboard.phases.reduce((sum, phase) => sum + phase.total, 0);
+/* ---------- Página ---------- */
 
-  $("dash-sub").textContent = dashboard.last_collected_at
-    ? `Última coleta: ${formatDate(dashboard.last_collected_at)} · ${total} features`
-    : "Sem coleta realizada.";
-  $("dash-empty").hidden = total > 0;
-  $("chart-wrap").hidden = total === 0 || state.table;
-  $("table-wrap").hidden = total === 0 || !state.table;
-  $("legend").hidden = total === 0;
-
+function renderLegend(ordered) {
   const legend = $("legend");
   legend.replaceChildren();
-  for (const item of series) {
+  const labels = ordered.slice(0, MAX_SLOTS);
+  if (ordered.length > MAX_SLOTS) labels.push(OTHER_LABEL);
+  const anyInvalid = [...state.dashboards.values()].some((d) =>
+    d.phases.some((p) => p.verdicts.some((v) => v.verdict === INVALID_LABEL))
+  );
+  if (anyInvalid) labels.push(INVALID_LABEL);
+  for (const label of labels) {
     const li = document.createElement("li");
     const swatch = document.createElement("span");
     swatch.className = "swatch";
-    swatch.style.background = cssVar(item.color);
-    li.append(swatch, document.createTextNode(item.label));
+    swatch.style.background = cssVar(colorOf(label));
+    li.append(swatch, document.createTextNode(label));
     legend.append(li);
   }
-
-  if (total === 0) {
-    if (state.chart) state.chart.destroy();
-    state.chart = null;
-    return;
-  }
-  renderTable(dashboard, series);
-  if (!state.table) renderChart(dashboard, series);
+  legend.hidden = labels.length === 0;
 }
 
-function renderTable(dashboard, series) {
+function renderPage() {
+  for (const chart of state.charts.values()) chart.destroy();
+  state.charts.clear();
+
+  const ordered = assignSlots();
+  renderLegend(ordered);
+
+  $("empty").hidden = state.repos.length > 0;
+  const container = $("charts");
+  container.replaceChildren();
+  for (const repo of state.repos) {
+    container.append(renderCard(repo, state.dashboards.get(repo.id), ordered));
+  }
+}
+
+function renderCard(repo, dashboard, ordered) {
+  const card = document.createElement("section");
+  card.className = "card chart-card";
+  card.setAttribute("aria-labelledby", `title-${repo.id}`);
+
+  const head = document.createElement("div");
+  head.className = "card-head";
+  const titles = document.createElement("div");
+  const title = document.createElement("h2");
+  title.id = `title-${repo.id}`;
+  title.textContent = repoLabel(repo);
+  const status = statusText(repo);
+  const statusEl = document.createElement("p");
+  statusEl.className = `status ${status.cls}`;
+  statusEl.textContent = status.text;
+  titles.append(title, statusEl);
+
+  const refresh = document.createElement("button");
+  refresh.type = "button";
+  refresh.className = "refresh";
+  const working = state.busy.has(repo.id);
+  refresh.textContent = working ? "Atualizando…" : "Atualizar";
+  refresh.disabled = state.busy.size > 0;
+  refresh.title = "Coleta novos dados se houver um commit mais recente";
+  refresh.setAttribute("aria-label", `Atualizar ${repoLabel(repo)}`);
+  refresh.addEventListener("click", () => collectRepos([repo.id], true));
+  head.append(titles, refresh);
+  card.append(head);
+
+  const total = dashboard.phases.reduce((sum, phase) => sum + phase.total, 0);
+  if (total === 0) {
+    const empty = document.createElement("div");
+    empty.className = "chart-empty";
+    empty.textContent = "Nenhum relatório coletado. Use “Atualizar” para coletar.";
+    card.append(empty);
+    return card;
+  }
+
+  const series = buildSeries(dashboard, ordered);
+  if (state.mode === "table") {
+    card.append(buildTable(dashboard, series));
+  } else if (state.mode === "trend") {
+    card.append(buildTrendView(repo));
+  } else {
+    const wrap = document.createElement("div");
+    wrap.className = "chart-wrap";
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute(
+      "aria-label",
+      `Gráfico de barras empilhadas horizontais de ${repoLabel(repo)}: features por fase e veredito`
+    );
+    wrap.append(canvas);
+    card.append(wrap);
+    state.charts.set(repo.id, buildChart(canvas, dashboard, series));
+  }
+  return card;
+}
+
+function buildTable(dashboard, series) {
   const table = document.createElement("table");
   const head = table.createTHead().insertRow();
   for (const text of ["Fase", ...series.map((s) => s.label), "Total"]) {
@@ -295,7 +384,7 @@ function renderTable(dashboard, series) {
     for (const s of series) row.insertCell().textContent = s.data[index];
     row.insertCell().textContent = phase.total;
   });
-  $("table-wrap").replaceChildren(table);
+  return table;
 }
 
 function luminance(hex) {
@@ -330,9 +419,8 @@ const segmentLabels = {
   },
 };
 
-function renderChart(dashboard, series) {
-  const surface = cssVar("--surface");
-  const config = {
+function buildChart(canvas, dashboard, series) {
+  return new Chart(canvas, {
     type: "bar",
     plugins: [segmentLabels],
     data: {
@@ -340,8 +428,8 @@ function renderChart(dashboard, series) {
       datasets: series.map((item) => ({
         label: item.label,
         data: item.data,
-        backgroundColor: cssVar(item.color),
-        borderColor: surface,
+        backgroundColor: cssVar(colorOf(item.label)),
+        borderColor: cssVar("--surface"),
         borderWidth: 2,
         borderRadius: 4,
         borderSkipped: false,
@@ -364,7 +452,6 @@ function renderChart(dashboard, series) {
         },
         y: {
           stacked: true,
-          reverse: false,
           ticks: { color: cssVar("--text-2") },
           grid: { display: false },
           border: { color: cssVar("--axis") },
@@ -380,32 +467,172 @@ function renderChart(dashboard, series) {
         },
       },
     },
-  };
-  if (state.chart) state.chart.destroy();
-  state.chart = new Chart($("chart"), config);
+  });
 }
 
-function toggleTable() {
-  state.table = !state.table;
-  $("toggle-table").setAttribute("aria-pressed", String(state.table));
-  $("toggle-table").textContent = state.table ? "Ver como gráfico" : "Ver como tabela";
-  if (state.dashboard) renderDashboard();
+function withAlpha(hex, alpha) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+function buildTrendView(repo) {
+  const trend = state.trends.get(repo.id);
+  if (!trend || trend.dates.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "chart-empty";
+    empty.textContent = `Nenhum relatório datado de ${PHASE_LABELS[state.trendPhase]} para exibir a tendência.`;
+    return empty;
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "chart-wrap";
+  const canvas = document.createElement("canvas");
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute(
+    "aria-label",
+    `Gráfico de linhas empilhadas de ${repoLabel(repo)}: evolução das features de ${PHASE_LABELS[state.trendPhase]} por veredito`
+  );
+  wrap.append(canvas);
+  state.charts.set(repo.id, buildTrendChart(canvas, trend));
+  return wrap;
+}
+
+const shortDate = (iso) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+
+function buildTrendChart(canvas, trend) {
+  const series = [...trend.series].sort((a, b) => ensureSlot(a.verdict) - ensureSlot(b.verdict));
+  return new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: trend.dates.map(shortDate),
+      datasets: series.map((item, index) => {
+        const color = cssVar(colorOf(item.verdict));
+        return {
+          label: item.verdict,
+          data: item.counts,
+          fill: index === 0 ? "origin" : "-1", // cada faixa vai até a linha de baixo, sem sobreposição
+          borderColor: color,
+          backgroundColor: withAlpha(color, 0.35),
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBackgroundColor: color,
+          pointHoverBorderColor: cssVar("--surface"),
+          pointHoverBorderWidth: 2,
+          tension: 0.2,
+        };
+      }),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          ticks: { maxTicksLimit: 8, maxRotation: 0, color: cssVar("--muted") },
+          grid: { display: false },
+          border: { color: cssVar("--axis") },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: { precision: 0, color: cssVar("--muted") },
+          grid: { color: cssVar("--grid") },
+          border: { color: cssVar("--axis") },
+          title: { display: true, text: "Features", color: cssVar("--text-2") },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) =>
+              new Date(`${trend.dates[items[0].dataIndex]}T00:00:00`).toLocaleDateString("pt-BR"),
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}`,
+            footer: (items) => `Total: ${items.reduce((sum, item) => sum + item.parsed.y, 0)}`,
+          },
+        },
+      },
+    },
+  });
+}
+
+async function setMode(mode) {
+  state.mode = mode;
+  for (const button of document.querySelectorAll("#view-modes button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+  }
+  $("trend-controls").hidden = mode !== "trend";
+  if (mode === "trend") {
+    try {
+      await loadTrends();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+  renderPage();
+}
+
+async function changeTrendPhase(event) {
+  state.trendPhase = event.target.value;
+  try {
+    await loadTrends();
+  } catch (error) {
+    toast(error.message, true);
+  }
+  renderPage();
+}
+
+/* ---------- Tema ---------- */
+
+const ICON_ATTRS = 'viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" ' +
+  'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const SUN = `<svg ${ICON_ATTRS}><circle cx="12" cy="12" r="5"></circle><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>`;
+const MOON = `<svg ${ICON_ATTRS}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+function effectiveTheme() {
+  return document.documentElement.dataset.theme || (systemDark.matches ? "dark" : "light");
+}
+
+function updateThemeButton() {
+  const dark = effectiveTheme() === "dark";
+  const button = $("theme-toggle");
+  button.innerHTML = dark ? SUN : MOON; // o ícone mostra o tema para o qual a troca leva
+  const label = dark ? "Usar tema claro" : "Usar tema escuro";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+}
+
+function applyThemeChange() {
+  updateThemeButton();
+  if (state.repos.length) renderPage(); // os gráficos leem as cores ao serem criados
+}
+
+function toggleTheme() {
+  const next = effectiveTheme() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try {
+    localStorage.setItem("theme", next);
+  } catch (error) {
+    // sem armazenamento: a escolha vale só até recarregar a página
+  }
+  applyThemeChange();
 }
 
 /* ---------- Inicialização ---------- */
 
+$("open-settings").addEventListener("click", openSettings);
+$("close-settings").addEventListener("click", () => dialog.close());
 $("repo-form").addEventListener("submit", addRepo);
 $("collect-all").addEventListener("click", () => collectRepos(null));
-$("toggle-table").addEventListener("click", toggleTable);
-window
-  .matchMedia("(prefers-color-scheme: dark)")
-  .addEventListener("change", () => state.dashboard && renderDashboard());
+document.querySelectorAll("#view-modes button").forEach((button) =>
+  button.addEventListener("click", () => setMode(button.dataset.mode))
+);
+$("trend-phase").addEventListener("change", changeTrendPhase);
+$("theme-toggle").addEventListener("click", toggleTheme);
+systemDark.addEventListener("change", applyThemeChange);
+updateThemeButton();
 
-(async () => {
-  try {
-    await loadRepos();
-    await refreshDashboard();
-  } catch (error) {
-    toast(error.message, true);
-  }
-})();
+refreshAll().catch((error) => toast(error.message, true));
