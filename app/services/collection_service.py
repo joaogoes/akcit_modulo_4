@@ -40,7 +40,9 @@ class CollectionService:
         self._max_workers = max_workers
 
     def collect_many(
-        self, repository_ids: Sequence[int] | None = None
+        self,
+        repository_ids: Sequence[int] | None = None,
+        only_if_changed: bool = False,
     ) -> list[CollectionRead]:
         """Coleta os repositórios informados (ou todos); `NotFoundError` se algum não existir."""
         if repository_ids is None:
@@ -49,26 +51,44 @@ class CollectionService:
             ids = list(dict.fromkeys(repository_ids))
             for repository_id in ids:
                 self._repos.get(repository_id)
-        return [self.collect(repository_id) for repository_id in ids]
+        return [self.collect(repository_id, only_if_changed) for repository_id in ids]
 
-    def collect(self, repository_id: int) -> CollectionRead:
-        """Coleta um repositório. Em falha, os dados anteriores são preservados."""
+    def collect(self, repository_id: int, only_if_changed: bool = False) -> CollectionRead:
+        """Coleta um repositório. Em falha, os dados anteriores são preservados.
+
+        Com `only_if_changed`, não lê nada se o último commit do branch for o mesmo
+        da última coleta bem-sucedida (resultado `unchanged`).
+        """
         repo = self._repos.get(repository_id)
         started = datetime.now(UTC)
         clock = time.perf_counter()
+        head: str | None = None
         try:
-            ref = repo.branch or self._github.get_default_branch(repo.full_name)
-            items = self._discover(repo, ref)
-            reports, errors = self._read_all(repo, ref, items)
+            head = self._github.get_head_commit(repo.full_name, repo.branch or "HEAD")
+            if (
+                only_if_changed
+                and head == repo.last_commit_sha
+                and repo.last_collection_status == CollectionStatus.SUCCESS
+            ):
+                return CollectionRead(
+                    repository_id=repo.id,
+                    status=CollectionStatus.UNCHANGED,
+                    started_at=started,
+                    finished_at=datetime.now(UTC),
+                    commit_sha=head,
+                )
+            # Lê tudo pelo SHA, para que a coleta seja um retrato único do commit.
+            items = self._discover(repo, head)
+            reports, errors = self._read_all(repo, head, items)
             self._reports.replace_for_repository(repo.id, reports)
         except GitHubError as exc:
             return self._finish(repo, started, clock, CollectionStatus.FAILED, 0,
-                                [CollectionError(message=str(exc))])
+                                [CollectionError(message=str(exc))], None)
         except Exception as exc:  # falha de persistência: nada foi alterado
             logger.exception("Falha ao gravar a coleta de %s", repo.full_name)
             return self._finish(repo, started, clock, CollectionStatus.FAILED, 0,
-                                [CollectionError(message=f"Erro ao gravar os dados: {exc}")])
-        return self._finish(repo, started, clock, CollectionStatus.SUCCESS, len(items), errors)
+                                [CollectionError(message=f"Erro ao gravar os dados: {exc}")], None)
+        return self._finish(repo, started, clock, CollectionStatus.SUCCESS, len(items), errors, head)
 
     def _discover(self, repo: RepositoryRead, ref: str) -> list[_Item]:
         items: list[_Item] = []
@@ -111,14 +131,15 @@ class CollectionService:
         status: CollectionStatus,
         files_read: int,
         errors: list[CollectionError],
+        commit_sha: str | None,
     ) -> CollectionRead:
         finished = datetime.now(UTC)
-        self._repos.record_collection(repo.id, status, finished)
+        self._repos.record_collection(repo.id, status, finished, commit_sha)
         logger.info(
             "coleta repo=%s status=%s arquivos=%d erros=%d duracao=%.2fs",
             repo.full_name, status.value, files_read, len(errors), time.perf_counter() - clock,
         )
         return CollectionRead(
             repository_id=repo.id, status=status, started_at=started,
-            finished_at=finished, files_read=files_read, errors=errors,
+            finished_at=finished, commit_sha=commit_sha, files_read=files_read, errors=errors,
         )

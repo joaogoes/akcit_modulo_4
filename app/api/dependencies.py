@@ -4,7 +4,7 @@ from fastapi import Depends, Request
 
 from app.github import GitHubClient
 from app.repositories import Database, RepoRepository, ReportRepository
-from app.services import CollectionService, DashboardService
+from app.services import CollectionService, DashboardService, TrendService
 
 
 def get_db(request: Request) -> Database:
@@ -42,3 +42,11 @@ def get_dashboard_service(
 ) -> DashboardService:
     """Serviço do dashboard."""
     return DashboardService(repos, reports)
+
+
+def get_trend_service(
+    repos: RepoRepository = Depends(get_repo_repository),
+    reports: ReportRepository = Depends(get_report_repository),
+) -> TrendService:
+    """Serviço de tendência."""
+    return TrendService(repos, reports)

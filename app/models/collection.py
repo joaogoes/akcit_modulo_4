@@ -12,6 +12,7 @@ class CollectionStatus(StrEnum):
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    UNCHANGED = "unchanged"  # sem novo commit desde a última coleta; nada foi lido
 
 
 class CollectionRequest(BaseModel):
@@ -21,6 +22,10 @@ class CollectionRequest(BaseModel):
         default=None,
         min_length=1,
         description="Se omitido, coleta todos os repositórios cadastrados.",
+    )
+    only_if_changed: bool = Field(
+        default=False,
+        description="Só coleta se o último commit diferir do último coletado.",
     )
 
 
@@ -41,5 +46,6 @@ class CollectionRead(BaseModel):
     status: CollectionStatus
     started_at: datetime
     finished_at: datetime | None = None
+    commit_sha: str | None = Field(default=None, description="Commit lido (ou verificado).")
     files_read: int = Field(default=0, ge=0)
     errors: list[CollectionError] = Field(default_factory=list)

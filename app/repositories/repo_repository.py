@@ -16,6 +16,7 @@ def _to_model(row: sqlite3.Row) -> RepositoryRead:
         created_at=row["created_at"],
         last_collected_at=row["last_collected_at"],
         last_collection_status=row["last_collection_status"],
+        last_commit_sha=row["last_commit_sha"],
     )
 
 
@@ -26,7 +27,7 @@ class RepoRepository:
         self._db = db
 
     def create(self, data: RepositoryCreate) -> RepositoryRead:
-        """Cadastra um repositório; falha se `full_name` já existir."""
+        """Cadastra um repositório; falha se `full_name` e branch já existirem."""
         now = datetime.now(UTC).isoformat()
         try:
             with self._db.transaction() as conn:
@@ -36,7 +37,7 @@ class RepoRepository:
                     (data.full_name, data.branch, now),
                 )
         except sqlite3.IntegrityError as exc:
-            raise DuplicateRepositoryError(data.full_name) from exc
+            raise DuplicateRepositoryError(data.full_name, data.branch) from exc
         return self.get(cursor.lastrowid)
 
     def get(self, repository_id: int) -> RepositoryRead:
@@ -49,11 +50,15 @@ class RepoRepository:
             raise NotFoundError(f"Repositório {repository_id} não encontrado.")
         return _to_model(row)
 
-    def get_by_full_name(self, full_name: str) -> RepositoryRead | None:
-        """Busca por `owner/repo`, sem diferenciar maiúsculas e minúsculas."""
+    def get_by_full_name(
+        self, full_name: str, branch: str | None = None
+    ) -> RepositoryRead | None:
+        """Busca por `owner/repo` e branch, sem diferenciar maiúsculas e minúsculas."""
         with self._db.transaction() as conn:
             row = conn.execute(
-                "SELECT * FROM repositories WHERE full_name = ?", (full_name,)
+                "SELECT * FROM repositories"
+                " WHERE full_name = ? AND COALESCE(branch, '') = ?",
+                (full_name, branch or ""),
             ).fetchone()
         return _to_model(row) if row else None
 
@@ -79,15 +84,20 @@ class RepoRepository:
         repository_id: int,
         status: CollectionStatus,
         collected_at: datetime | None = None,
+        commit_sha: str | None = None,
     ) -> None:
-        """Registra data/hora e status da última coleta (RF-11)."""
+        """Registra data/hora, status e commit da última coleta (RF-11).
+
+        Sem `commit_sha` (coleta que falhou), o último commit coletado é mantido.
+        """
         at = (collected_at or datetime.now(UTC)).isoformat()
         with self._db.transaction() as conn:
             cursor = conn.execute(
                 "UPDATE repositories"
-                " SET last_collected_at = ?, last_collection_status = ?"
+                " SET last_collected_at = ?, last_collection_status = ?,"
+                " last_commit_sha = COALESCE(?, last_commit_sha)"
                 " WHERE id = ?",
-                (at, status.value, repository_id),
+                (at, status.value, commit_sha, repository_id),
             )
         if cursor.rowcount == 0:
             raise NotFoundError(f"Repositório {repository_id} não encontrado.")

@@ -29,7 +29,7 @@ def create_repository(
     except DuplicateRepositoryError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"Repositório já cadastrado: {data.full_name}.",
+            detail=f"Repositório já cadastrado: {exc}.",
         ) from exc
     response.headers["Location"] = f"/repositories/{created.id}"
     return created

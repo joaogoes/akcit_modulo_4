@@ -59,4 +59,5 @@ class RepositoryRead(BaseModel):
     created_at: datetime
     last_collected_at: datetime | None = None
     last_collection_status: CollectionStatus | None = None
+    last_commit_sha: str | None = None
 

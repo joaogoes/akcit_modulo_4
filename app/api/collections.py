@@ -21,8 +21,13 @@ def run_collection(
     service: Annotated[CollectionService, Depends(get_collection_service)],
     body: CollectionRequest | None = None,
 ) -> list[CollectionRead]:
-    """Coleta os repositórios informados ou, sem corpo, todos os cadastrados."""
+    """Coleta os repositórios informados ou, sem corpo, todos os cadastrados.
+
+    Com `only_if_changed`, repositórios sem novo commit voltam com status `unchanged`.
+    """
     try:
-        return service.collect_many(body.repository_ids if body else None)
+        if body is None:
+            return service.collect_many()
+        return service.collect_many(body.repository_ids, body.only_if_changed)
     except NotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

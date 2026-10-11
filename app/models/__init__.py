@@ -10,6 +10,7 @@ from app.models.dashboard import Dashboard, DashboardQuery, PhaseSummary, Verdic
 from app.models.phase import INVALID_LABEL, Phase
 from app.models.report import Report
 from app.models.repository import RepositoryCreate, RepositoryRead, RepositoryUpdate
+from app.models.trend import Trend, TrendQuery, TrendSeries
 
 __all__ = [
     "INVALID_LABEL",
@@ -25,5 +26,8 @@ __all__ = [
     "RepositoryCreate",
     "RepositoryRead",
     "RepositoryUpdate",
+    "Trend",
+    "TrendQuery",
+    "TrendSeries",
     "VerdictCount",
 ]

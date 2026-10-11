@@ -1,5 +1,7 @@
 """Cliente GitHub em memória, para testes."""
 
+import hashlib
+
 from app.github.errors import GitHubError
 
 
@@ -19,6 +21,13 @@ class InMemoryGitHubClient:
     def get_default_branch(self, full_name: str) -> str:
         self._files(full_name)
         return self.default_branch
+
+    def get_head_commit(self, full_name: str, ref: str) -> str:
+        """SHA derivado do conteúdo: muda quando qualquer arquivo muda."""
+        digest = hashlib.sha1(usedforsecurity=False)
+        for path, text in sorted(self._files(full_name).items()):
+            digest.update(f"{path}|{text}|".encode())
+        return digest.hexdigest()
 
     def list_files(self, full_name: str, ref: str) -> list[str]:
         if self.fail_listing:
