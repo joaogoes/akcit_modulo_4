@@ -1,45 +1,66 @@
 # Diagrama de componentes e fluxo de dados
 
-Componentes do MVP descritos em [01 escopo-mvp.md](01%20escopo-mvp.md). Dois fluxos: **coleta** (linhas tracejadas, A1–A8) e **consulta ao dashboard** (linhas contínuas, B1–B5).
+Componentes da aplicação como estão implementados (veja [01 escopo-mvp.md](01%20escopo-mvp.md) para os requisitos). Há três fluxos:
+
+- **Coleta** (linhas tracejadas, A1–A9): lê o GitHub e grava no banco. É o único fluxo que acessa o GitHub.
+- **Dashboard** (linhas contínuas, B1–B4): lê só o banco.
+- **Tendência** (linhas grossas, C1–C4): lê só o banco.
 
 ```mermaid
 flowchart LR
-    Browser["Navegador<br/>(página + gráfico)"]
-    GitHub["API do GitHub"]
+    Browser["Navegador<br/>app/static + Chart.js"]
+    GitHub["GitHub<br/>API e raw.githubusercontent.com"]
 
-    subgraph App["Aplicação FastAPI"]
-        API["API<br/>(routers, schemas Pydantic)"]
-        RepoSvc["RepositoryService<br/>(cadastro)"]
-        CollectSvc["CollectionService<br/>(orquestra a coleta)"]
-        DashSvc["DashboardService<br/>(agregação)"]
+    subgraph App["Aplicação FastAPI (app/)"]
+        API["api<br/>repositories · collections<br/>dashboard · trend"]
+        Collect["CollectionService<br/>(orquestra a coleta)"]
+        Source["ReportSource<br/>(encontra e lê relatórios)"]
+        Parser["parse_report + layout<br/>(fases, pastas, generated, verdict)"]
         Client["GitHubClient<br/>(interface)"]
-        Parser["ReportParser<br/>(generated, verdict)"]
-        Repo["Repositories<br/>(sqlite3)"]
+        Dash["DashboardService"]
+        Trend["TrendService"]
+        Shared["selection + verdicts<br/>(ids e rótulos comuns)"]
+        Repos["RepoRepository<br/>ReportRepository"]
+        DB["Database + schema<br/>(sqlite3)"]
     end
 
-    DB[("Banco de dados<br/>SQLite")]
+    SQLite[("SQLite<br/>app.db")]
 
     %% Cadastro
-    Browser -- "cadastra owner/repo" --> API
-    API --> RepoSvc
-    RepoSvc --> Repo
+    Browser -- "POST/GET/PUT/DELETE /repositories" --> API
+    API --> Repos
 
-    %% Fluxo de coleta
+    %% Coleta
     Browser -. "A1. POST /collections" .-> API
-    API -. "A2. repositórios" .-> CollectSvc
-    CollectSvc -. "A3. árvore e arquivos .md" .-> Client
-    Client -. "A4. REST + ETag" .-> GitHub
-    GitHub -. "A5. conteúdo" .-> Client
-    CollectSvc -. "A6. texto do relatório" .-> Parser
-    Parser -. "A7. Report" .-> CollectSvc
-    CollectSvc -. "A8. grava em transação" .-> Repo
+    API -. "A2. repositórios" .-> Collect
+    Collect -. "A3. SHA do commit" .-> Client
+    Client -. "A4. REST e raw" .-> GitHub
+    Collect -. "A5. mesmo SHA? (unchanged)" .-> Repos
+    Collect -. "A6. árvore e arquivos .md" .-> Source
+    Source -. "A7. texto do relatório" .-> Parser
+    Source -. "lê pelo cliente" .-> Client
+    Collect -. "A8. grava em transação" .-> Repos
+    Collect -. "A9. status e commit" .-> Repos
 
-    %% Fluxo do dashboard
+    %% Dashboard
     Browser -- "B1. GET /api/dashboard" --> API
-    API -- "B2. filtro de repositórios" --> DashSvc
-    DashSvc -- "B3. consulta" --> Repo
-    Repo -- "B4. totais por fase e veredito" --> DashSvc
-    DashSvc -- "B5. Dashboard (JSON)" --> API
+    API -- "B2. ids" --> Dash
+    Dash -- "B3. relatórios" --> Repos
+    Dash -- "regras" --> Shared
+    Dash -- "B4. JSON por fase e veredito" --> API
 
-    Repo <--> DB
+    %% Tendência
+    Browser == "C1. GET /api/trend" ==> API
+    API == "C2. ids e fase" ==> Trend
+    Trend == "C3. relatórios datados" ==> Repos
+    Trend == "regras" ==> Shared
+    Trend == "C4. JSON semanal" ==> API
+
+    Repos --> DB --> SQLite
 ```
+
+**Pontos de projeto**
+- O dashboard e a tendência nunca chamam o GitHub; só a coleta chama, o que mantém a cota da API sob controle.
+- A coleta lê todos os arquivos pelo SHA do commit (A3), então os dados são um retrato único dele. Com `only_if_changed`, o mesmo SHA da última coleta bem-sucedida encerra o fluxo em A5, sem ler arquivos.
+- `GitHubClient` é uma interface: a versão HTTP é usada em produção e a versão em memória, nos testes.
+- A gravação (A8) troca todos os relatórios do repositório em uma única transação; se falhar, os dados anteriores permanecem.
