@@ -98,6 +98,12 @@ Objetivo: completar as fases e funcionalidades de gestão, e dar robustez e cobe
   - [ ] CA2: o status e a data/hora da última coleta aparecem por repositório.
   - [ ] CA3: coleta que falha por completo preserva os dados da coleta anterior.
 
+- [ ] **RF-R2-07 – Atualizar apenas com novo commit** (origem: RF-19)
+  - [ ] CA1: cada painel tem o botão **Atualizar**.
+  - [ ] CA2: com o mesmo commit da última coleta bem-sucedida, nada é lido e a mensagem informa que não há novos commits.
+  - [ ] CA3: com commit diferente, a coleta ocorre e o novo commit é gravado e exibido no painel.
+  - [ ] CA4: coleta que falhou não altera o commit armazenado, e o próximo **Atualizar** tenta de novo.
+
 ### Requisitos técnicos
 
 - [ ] **RT-R2-01 – Migrações e execuções de coleta** (origem: RNF-07)
@@ -123,6 +129,11 @@ Objetivo: atender aos requisitos não funcionais, validar o aceite e documentar.
 - [ ] **RF-R3-01 – Ordem semântica dos vereditos (opcional)** (origem: P-08)
   - [ ] CA1: patrocinador confirma se a ordem alfabética atende; se não, a ordem semântica é definida e aplicada.
   - [ ] CA2: o rótulo exibido é a primeira grafia encontrada do veredito (RF-18).
+- [ ] **RF-R3-03 – Modo tendência** (origem: RF-20)
+  - [ ] CA1: o modo **Ver como tendência** exibe um gráfico de linhas empilhadas por repositório, com seletor de fase (padrão Tests).
+  - [ ] CA2: `GET /api/trend` devolve pontos semanais e uma série por veredito, calculados só com o banco e sem chamadas ao GitHub (teste automatizado).
+  - [ ] CA3: o veredito vigente em cada data é o do relatório válido mais recente até ela; a soma das séries em cada ponto é o número de features já avaliadas na fase.
+  - [ ] CA4: as cores por veredito são as mesmas dos demais gráficos; fase sem relatórios datados mostra um aviso.
 - [ ] **RF-R3-02 – Aceite ponta a ponta** (origem: critérios de aceite, seção 7)
   - [ ] CA1: 2 repositórios válidos e 1 inválido: os válidos aparecem e o inválido mostra erro específico.
   - [ ] CA2: após reiniciar a aplicação, repositórios e último resultado continuam disponíveis.

@@ -43,6 +43,9 @@ Cada relatório contém dois campos, lidos do conteúdo do arquivo:
 - **RF-10a** A unidade de contagem é o par (repositório, feature, fase). Features de mesmo nome em repositórios diferentes são contadas separadamente.
 - **RF-11** O usuário aciona a atualização dos dados sob demanda, para todos os repositórios ou para um específico. Cada coleta substitui os relatórios armazenados do repositório coletado de forma **atômica**: os novos dados são gravados em uma única transação, que só é confirmada se a coleta do repositório terminar com sucesso. O sistema exibe a data/hora e o status da última coleta de cada repositório. Uma coleta que falha, total ou parcialmente no meio da gravação, preserva os dados da coleta anterior.
 
+- **RF-19** Cada painel do dashboard tem um botão **Atualizar**, que coleta os dados do repositório somente se o último commit do branch for diferente do último commit coletado com sucesso. Sem novo commit, nada é lido e o usuário é informado. O commit coletado é armazenado e exibido no painel. A coleta lê todos os arquivos pelo SHA desse commit, para que os dados correspondam a um único retrato do repositório.
+- **RF-20** O dashboard tem o modo **Ver como tendência**, que exibe por repositório um gráfico de linhas empilhadas com a evolução das features por veredito ao longo do tempo, para uma fase escolhida pelo usuário (padrão: Tests). Os pontos são semanais, do primeiro ao último relatório válido da fase. Em cada ponto, vale o relatório válido mais recente de cada feature até aquela data; features sem relatório válido ainda não entram na contagem. O cálculo usa só os relatórios já armazenados (`generated` e `verdict`) e não faz chamadas ao GitHub. Relatórios sem `generated` válido ficam fora da linha do tempo.
+
 ### 3.3 Dashboard
 
 - **RF-12** O dashboard exibe um gráfico de barras **empilhadas horizontalmente**. Cada barra representa uma fase, na ordem Requirements → FSpec → DSpec → Code → Tests.
@@ -91,7 +94,7 @@ Cada relatório contém dois campos, lidos do conteúdo do arquivo:
 
 - Escrita nos repositórios (commits, PRs, issues, comentários).
 - Autenticação e autorização de usuários da aplicação, multiusuário, perfis de acesso.
-- Evolução temporal: séries históricas, tendências e comparação entre períodos. O campo `generated` é lido, mas só serve para escolher o relatório mais recente.
+- Evolução temporal além da tendência semanal por fase (RF-20): histórico por commit do Git, comparação entre períodos e previsões. A tendência usa as datas `generated` dos relatórios, não o histórico de commits.
 - Outros tipos de gráfico, drill-down até o conteúdo do relatório, e navegação por feature individual.
 - Visualização do conteúdo dos relatórios `.md`.
 - Exportação (PDF, imagem, CSV) e impressão.

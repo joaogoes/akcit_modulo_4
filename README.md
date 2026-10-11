@@ -13,11 +13,13 @@ $env:GITHUB_TOKEN = "<token com leitura de conteúdo>"   # opcional para reposit
 uvicorn app.main:create_app --factory
 ```
 
-Abra <http://127.0.0.1:8000>. Cadastre um repositório (`owner/repo`), clique em **Coletar** e veja o gráfico.
+Abra <http://127.0.0.1:8000>. No primeiro uso, o banco já vem com dois repositórios de exemplo (`joaogoes/akcit_modulo_4_repo`, branches `projeto-1` e `projeto-2`); clique em **Coletar todos** e veja o gráfico. Para acompanhar outro repositório, cadastre `owner/repo` (e a branch, se necessária). O mesmo repositório pode ser cadastrado uma vez por branch. O modo **Ver como tendência** mostra a evolução semanal das features por veredito (fase à escolha, padrão Tests), calculada só com os dados já coletados. O botão **Atualizar** de cada painel só coleta se houver um commit novo no branch; **Coletar**, na engrenagem, sempre lê tudo.
+
+Os repositórios de exemplo são cadastrados apenas quando o banco é criado; remover um deles não o recria. Para voltar ao estado inicial, apague o arquivo do banco (`app.db`).
 
 | Variável | Padrão | Uso |
 |---|---|---|
-| `GITHUB_TOKEN` | — | Token de leitura. Sem ele, o limite da API é de 60 requisições/hora. |
+| `GITHUB_TOKEN` | — | Token de leitura, necessário para repositórios privados. Sem ele só repositórios públicos funcionam: a árvore vem da API (1 chamada por coleta, limite de 60/hora) e os arquivos de `raw.githubusercontent.com`. |
 | `DATABASE_PATH` | `app.db` | Arquivo SQLite. |
 
 O gráfico usa Chart.js, carregado de `cdnjs.cloudflare.com`; a página precisa de acesso à internet.
