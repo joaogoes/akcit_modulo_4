@@ -37,4 +37,4 @@ Preencher ao concluir RT-R0-01 e RT-R0-02.
 
 - [ ] P-01 (caminho de Tests): _pendente_
 - [ ] P-02 (formato dos campos): _pendente_
-- [ ] Chamadas à API por repositório e extrapolação para 10 × 200: _pendente_
+- [x] Chamadas à API por repositório e extrapolação para 10 × 200: a coleta usa 2 chamadas da API por repositório (SHA do commit e árvore de arquivos) e, para cada relatório, nenhuma sem token (leitura por `raw.githubusercontent.com`) ou 1 com token. Para 10 repositórios com 200 relatórios, uma coleta completa faz 20 chamadas sem token ou 2.020 com token, dentro do limite de 5.000 por hora (cerca de 2 coletas completas por hora com token). Contagem obtida do desenho e confirmada em coletas reais do `projeto-1` (217 relatórios) e do `projeto-2` (608). O tempo de coleta ainda não foi medido (RT-R3-01).
