@@ -146,7 +146,15 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .chart-card h2 { margin-bottom: 2px; }
 .chart-card .status { font-size: 0.85rem; color: var(--text-2); }
-.chart-card .status.status-ok { color: var(--ok); }
+.chart-card .status.tokens { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); }
+.tokens h3 { margin: 0 0 4px; font-size: 0.95rem; font-weight: 600; }
+.token-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.token-list li { padding: 10px 0; border-top: 1px solid var(--grid); }
+.token-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-bottom: 6px; }
+.token-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.token-form input { flex: 1 1 200px; margin: 0; }
+
+.status-ok { color: var(--ok); }
 .chart-card .status.status-failed { color: var(--danger); }
 .refresh { flex: none; }
 .chart-wrap { position: relative; height: 270px; }
@@ -215,6 +223,7 @@ button[aria-pressed="true"] { background: var(--grid); }
 dialog {
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;

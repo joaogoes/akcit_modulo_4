@@ -23,6 +23,7 @@ const state = {
   trendPhase: "tests",
   trends: new Map(), // id do repositório -> resposta de /api/trend
   busy: new Set(),
+  tokenSettings: null, // resposta de /settings/tokens; nunca contém os valores dos tokens
 };
 
 /* ---------- API ---------- */
@@ -60,6 +61,12 @@ function toast(message, isError = false) {
 
 /* ---------- Utilitários ---------- */
 
+const PROVIDER_LABELS = { github: "GitHub", azure_devops: "Azure DevOps" };
+
+function providerLabel(repo) {
+  return PROVIDER_LABELS[repo.provider] || repo.provider;
+}
+
 function repoLabel(repo) {
   return repo.branch ? `${repo.full_name} @ ${repo.branch}` : repo.full_name;
 }
@@ -90,6 +97,7 @@ function openSettings() {
   dialog.append($("toasts")); // o diálogo cobre a página; as mensagens precisam ficar acima dele
   dialog.showModal();
   $("repo-name").focus();
+  loadTokens().catch((error) => toast(error.message, true));
 }
 
 dialog.addEventListener("close", () => document.body.append($("toasts")));
@@ -115,7 +123,7 @@ function renderRepoList() {
     const statusEl = document.createElement("span");
     statusEl.className = status.cls;
     statusEl.textContent = status.text;
-    meta.append(statusEl);
+    meta.append(`${providerLabel(repo)} · `, statusEl);
 
     const actions = document.createElement("span");
     actions.className = "repo-actions";
@@ -136,6 +144,99 @@ function renderRepoList() {
     list.append(li);
   }
   $("collect-all").disabled = state.busy.size > 0 || state.repos.length === 0;
+}
+
+/* ---------- Tokens de acesso ---------- */
+
+async function loadTokens() {
+  state.tokenSettings = await api("GET", "/settings/tokens");
+  renderTokens();
+}
+
+function tokenStatusText(token) {
+  if (token.source === "database") return `Salvo no banco, em ${formatDate(token.updated_at)}`;
+  if (token.source === "environment") return "Definido por variável de ambiente";
+  return "Não configurado";
+}
+
+function renderTokens() {
+  const { secure_storage, tokens } = state.tokenSettings;
+  $("tokens-note").textContent = secure_storage
+    ? "O token é cifrado com o DPAPI do Windows e só pode ser lido por este usuário, nesta máquina. Depois de salvo, não é exibido de novo."
+    : "O armazenamento protegido só existe no Windows. Neste sistema, use as variáveis de ambiente GITHUB_TOKEN e AZURE_DEVOPS_TOKEN.";
+
+  const list = $("token-list");
+  list.replaceChildren();
+  for (const token of tokens) {
+    const li = document.createElement("li");
+
+    const head = document.createElement("div");
+    head.className = "token-head";
+    const name = document.createElement("strong");
+    name.textContent = token.label;
+    const status = document.createElement("span");
+    status.className = token.configured ? "status-ok" : "muted";
+    status.textContent = tokenStatusText(token);
+    head.append(name, status);
+
+    const form = document.createElement("form");
+    form.className = "token-form";
+    form.autocomplete = "off";
+    const input = document.createElement("input");
+    input.type = "password";
+    input.autocomplete = "new-password";
+    input.placeholder = token.configured ? "Colar um novo token para substituir" : "Colar o token";
+    input.disabled = !secure_storage;
+    input.setAttribute("aria-label", `Token de acesso do ${token.label}`);
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.className = "primary";
+    save.textContent = "Salvar";
+    save.disabled = !secure_storage;
+    form.append(input, save);
+    if (token.source === "database") {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "danger";
+      remove.textContent = "Remover";
+      remove.addEventListener("click", () => removeToken(token));
+      form.append(remove);
+    }
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveToken(token, input);
+    });
+
+    li.append(head, form);
+    list.append(li);
+  }
+}
+
+async function saveToken(token, input) {
+  const value = input.value;
+  if (!value.trim()) {
+    toast(`Cole o token do ${token.label} antes de salvar.`, true);
+    return;
+  }
+  try {
+    await api("PUT", `/settings/tokens/${token.provider}`, { token: value });
+    input.value = ""; // o valor não fica na página
+    toast(`Token do ${token.label} salvo. Já vale para as próximas coletas.`);
+    await loadTokens();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function removeToken(token) {
+  if (!confirm(`Remover o token do ${token.label} salvo no banco?`)) return;
+  try {
+    await api("DELETE", `/settings/tokens/${token.provider}`);
+    toast(`Token do ${token.label} removido.`);
+    await loadTokens();
+  } catch (error) {
+    toast(error.message, true);
+  }
 }
 
 async function addRepo(event) {

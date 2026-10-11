@@ -56,7 +56,7 @@
     <form id="repo-form" class="repo-form" autocomplete="off">
       <label>
         Repositório
-        <input id="repo-name" name="full_name" placeholder="owner/repo ou URL do GitHub" required>
+        <input id="repo-name" name="full_name" placeholder="owner/repo, URL do GitHub ou URL do Azure DevOps" required>
       </label>
       <label>
         Branch <span class="muted">(opcional)</span>
@@ -71,6 +71,12 @@
 
     <ul id="repo-list" class="repo-list" aria-live="polite"></ul>
     <p id="repo-empty" class="muted" hidden>Nenhum repositório cadastrado.</p>
+
+    <section class="tokens" aria-labelledby="tokens-title">
+      <h3 id="tokens-title">Tokens de acesso</h3>
+      <p id="tokens-note" class="muted"></p>
+      <ul id="token-list" class="token-list"></ul>
+    </section>
   </dialog>
 
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
