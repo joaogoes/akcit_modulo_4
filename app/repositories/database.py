@@ -1,40 +1,14 @@
-"""Conexão SQLite, esquema e transações."""
+"""Conexão SQLite e transações."""
 
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from typing import Any
 
-SCHEMA_VERSION = 2
+from app.repositories.schema import SCHEMA_VERSION, upgrade
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS repositories (
-    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-    full_name              TEXT NOT NULL COLLATE NOCASE,
-    branch                 TEXT,
-    created_at             TEXT NOT NULL,
-    last_collected_at      TEXT,
-    last_collection_status TEXT,
-    last_commit_sha        TEXT
-);
-
--- Um repositório pode ser cadastrado uma vez por branch.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_repositories_name_branch
-    ON repositories (full_name COLLATE NOCASE, COALESCE(branch, ''));
-
-CREATE TABLE IF NOT EXISTS reports (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    repository_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-    phase         TEXT NOT NULL,
-    feature       TEXT NOT NULL,
-    path          TEXT NOT NULL,
-    generated     TEXT,
-    verdict       TEXT
-);
-
-CREATE INDEX IF NOT EXISTS ix_reports_repository_phase
-    ON reports (repository_id, phase);
-"""
+__all__ = ["SCHEMA_VERSION", "Database"]
 
 
 class Database:
@@ -49,54 +23,8 @@ class Database:
         self._lock = threading.RLock()
 
     def init_schema(self) -> int:
-        """Cria ou atualiza o esquema e devolve o `user_version` anterior.
-
-        `0` indica banco novo ou criado por versão anterior da aplicação.
-        """
-        with self._lock:
-            previous = self._conn.execute("PRAGMA user_version").fetchone()[0]
-            if previous < SCHEMA_VERSION:
-                self._drop_unique_full_name()
-                self._add_missing_columns()
-            with self.transaction() as conn:
-                for statement in SCHEMA.split(";"):
-                    if statement.strip():
-                        conn.execute(statement)
-            self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        return previous
-
-    def _add_missing_columns(self) -> None:
-        """Acrescenta colunas criadas depois da primeira versão do esquema."""
-        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(repositories)")}
-        if columns and "last_commit_sha" not in columns:
-            self._conn.execute("ALTER TABLE repositories ADD COLUMN last_commit_sha TEXT")
-
-    def _drop_unique_full_name(self) -> None:
-        """Recria `repositories` sem a restrição `UNIQUE(full_name)` da versão 0."""
-        indexes = self._conn.execute("PRAGMA index_list(repositories)").fetchall()
-        if not any(index["origin"] == "u" for index in indexes):
-            return
-        columns = (
-            "id, full_name, branch, created_at, last_collected_at, last_collection_status"
-        )
-        new_table = SCHEMA.split(";")[0].replace(
-            "IF NOT EXISTS repositories", "repositories_new"
-        )
-        self._conn.execute("PRAGMA foreign_keys = OFF")
-        try:
-            self._conn.execute("BEGIN")
-            self._conn.execute(new_table)
-            self._conn.execute(
-                f"INSERT INTO repositories_new ({columns}) SELECT {columns} FROM repositories"
-            )
-            self._conn.execute("DROP TABLE repositories")
-            self._conn.execute("ALTER TABLE repositories_new RENAME TO repositories")
-            self._conn.execute("COMMIT")
-        except BaseException:
-            self._conn.execute("ROLLBACK")
-            raise
-        finally:
-            self._conn.execute("PRAGMA foreign_keys = ON")
+        """Cria ou atualiza o esquema e devolve o `user_version` anterior."""
+        return upgrade(self)
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -115,6 +43,31 @@ class Database:
                 self._conn.execute("ROLLBACK")
                 raise
             self._conn.execute("COMMIT")
+
+    @contextmanager
+    def foreign_keys_disabled(self) -> Iterator[None]:
+        """Desliga as chaves estrangeiras no bloco; use fora de uma transação."""
+        with self._lock:
+            self._conn.execute("PRAGMA foreign_keys = OFF")
+            try:
+                yield
+            finally:
+                self._conn.execute("PRAGMA foreign_keys = ON")
+
+    def execute(self, sql: str, params: Sequence[Any] = ()) -> sqlite3.Cursor:
+        """Executa um comando em sua própria transação; o cursor traz `rowcount` e `lastrowid`."""
+        with self.transaction() as conn:
+            return conn.execute(sql, params)
+
+    def fetch_one(self, sql: str, params: Sequence[Any] = ()) -> sqlite3.Row | None:
+        """Primeira linha do resultado, ou `None`."""
+        with self.transaction() as conn:
+            return conn.execute(sql, params).fetchone()
+
+    def fetch_all(self, sql: str, params: Sequence[Any] = ()) -> list[sqlite3.Row]:
+        """Todas as linhas do resultado."""
+        with self.transaction() as conn:
+            return conn.execute(sql, params).fetchall()
 
     def close(self) -> None:
         """Fecha a conexão."""

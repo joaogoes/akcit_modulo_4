@@ -10,8 +10,13 @@ from datetime import date, timedelta
 
 from app.models import Phase, Report, Trend, TrendSeries
 from app.repositories import RepoRepository, ReportRepository
+from app.services.selection import resolve_repository_ids
+from app.services.verdicts import VerdictLabels
 
 STEP = timedelta(days=7)
+
+# Histórico de uma feature: datas dos relatórios válidos e os próprios relatórios, em ordem.
+_Timeline = tuple[list[date], list[Report]]
 
 
 class TrendService:
@@ -29,39 +34,43 @@ class TrendService:
         Em cada data, vale o relatório válido mais recente de cada feature até
         aquele dia; features sem relatório válido ainda não entram na contagem.
         """
-        known = {repo.id for repo in self._repos.list()}
-        wanted = known if repository_ids is None else repository_ids
-        ids = sorted({repo_id for repo_id in wanted if repo_id in known})
+        _, ids = resolve_repository_ids(self._repos, repository_ids)
         reports = self._reports.list(ids, phase) if ids else []
+        timelines = self._timelines(reports)
+        if not timelines:
+            return Trend(phase=phase, repository_ids=ids, dates=[], series=[])
 
+        days = [day for stamps, _ in timelines for day in stamps]
+        points = self._points(min(days), max(days))
+        return Trend(
+            phase=phase, repository_ids=ids, dates=points, series=self._series(timelines, points)
+        )
+
+    @staticmethod
+    def _timelines(reports: list[Report]) -> list[_Timeline]:
         history: dict[tuple[int, str], list[Report]] = defaultdict(list)
         for report in reports:
             if report.valid:
                 history[(report.repository_id, report.feature)].append(report)
-        if not history:
-            return Trend(phase=phase, repository_ids=ids, dates=[], series=[])
-
-        timelines = []
+        timelines: list[_Timeline] = []
         for items in history.values():
             items.sort(key=lambda report: report.generated)
             timelines.append(([report.generated.date() for report in items], items))
-        days = [day for stamps, _ in timelines for day in stamps]
-        points = self._points(min(days), max(days))
+        return timelines
 
-        spelling: dict[str, str] = {}
+    @staticmethod
+    def _series(timelines: list[_Timeline], points: list[date]) -> list[TrendSeries]:
+        labels = VerdictLabels()
         counts: dict[str, list[int]] = defaultdict(lambda: [0] * len(points))
         for stamps, items in timelines:
             for index, point in enumerate(points):
                 position = bisect_right(stamps, point)
                 if position:
-                    latest = items[position - 1]
-                    label = spelling.setdefault(latest.verdict_key, latest.verdict)
-                    counts[label][index] += 1
-        series = [
+                    counts[labels.of(items[position - 1])][index] += 1
+        return [
             TrendSeries(verdict=label, counts=counts[label])
             for label in sorted(counts, key=str.casefold)
         ]
-        return Trend(phase=phase, repository_ids=ids, dates=points, series=series)
 
     @staticmethod
     def _points(first: date, last: date) -> list[date]:

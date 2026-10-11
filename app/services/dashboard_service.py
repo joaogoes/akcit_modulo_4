@@ -2,6 +2,7 @@
 
 from collections import Counter, defaultdict
 from collections.abc import Sequence
+from datetime import datetime
 
 from app.models import (
     INVALID_LABEL,
@@ -9,9 +10,12 @@ from app.models import (
     Phase,
     PhaseSummary,
     Report,
+    RepositoryRead,
     VerdictCount,
 )
 from app.repositories import RepoRepository, ReportRepository
+from app.services.selection import resolve_repository_ids
+from app.services.verdicts import VerdictLabels, latest_valid
 
 
 class DashboardService:
@@ -23,37 +27,38 @@ class DashboardService:
 
     def build(self, repository_ids: Sequence[int] | None = None) -> Dashboard:
         """Monta o dashboard; sem `repository_ids`, agrega todos os repositórios."""
-        known = {repo.id: repo for repo in self._repos.list()}
-        wanted = known if repository_ids is None else repository_ids
-        ids = sorted({repo_id for repo_id in wanted if repo_id in known})
+        known, ids = resolve_repository_ids(self._repos, repository_ids)
         reports = self._reports.list(ids) if ids else []
+        counts = self._count_features(reports)
+        return Dashboard(
+            phases=[self._summary(phase, counts[phase]) for phase in Phase],
+            repository_ids=ids,
+            last_collected_at=self._last_collected(known, ids),
+        )
 
+    @staticmethod
+    def _count_features(reports: list[Report]) -> dict[Phase, Counter[str]]:
+        """Uma contagem por (repositório, feature, fase), com o veredito vigente de cada uma."""
         features: dict[tuple[int, Phase, str], list[Report]] = defaultdict(list)
         for report in reports:
             features[(report.repository_id, report.phase, report.feature)].append(report)
 
-        spelling: dict[str, str] = {}
+        labels = VerdictLabels()
         counts: dict[Phase, Counter[str]] = {phase: Counter() for phase in Phase}
         for (_, phase, _), group in features.items():
-            valid = [report for report in group if report.valid]
-            if valid:
-                latest = max(valid, key=lambda report: report.generated)
-                label = spelling.setdefault(latest.verdict_key, latest.verdict)
-            else:
-                label = INVALID_LABEL
-            counts[phase][label] += 1
+            latest = latest_valid(group)
+            counts[phase][labels.of(latest) if latest else INVALID_LABEL] += 1
+        return counts
 
-        phases = [
-            PhaseSummary(
-                phase=phase,
-                total=sum(counts[phase].values()),
-                verdicts=[VerdictCount(verdict=v, count=n) for v, n in counts[phase].items()],
-            )
-            for phase in Phase
-        ]
-        collected = [known[i].last_collected_at for i in ids if known[i].last_collected_at]
-        return Dashboard(
-            phases=phases,
-            repository_ids=ids,
-            last_collected_at=max(collected, default=None),
+    @staticmethod
+    def _summary(phase: Phase, counter: Counter[str]) -> PhaseSummary:
+        return PhaseSummary(
+            phase=phase,
+            total=sum(counter.values()),
+            verdicts=[VerdictCount(verdict=verdict, count=count) for verdict, count in counter.items()],
         )
+
+    @staticmethod
+    def _last_collected(known: dict[int, RepositoryRead], ids: list[int]) -> datetime | None:
+        collected = [known[i].last_collected_at for i in ids if known[i].last_collected_at]
+        return max(collected, default=None)

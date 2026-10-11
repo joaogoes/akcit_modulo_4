@@ -20,6 +20,15 @@ def _to_model(row: sqlite3.Row) -> RepositoryRead:
     )
 
 
+def _not_found(repository_id: int) -> NotFoundError:
+    return NotFoundError(f"Repositório {repository_id} não encontrado.")
+
+
+def _require_changed(cursor: sqlite3.Cursor, repository_id: int) -> None:
+    if cursor.rowcount == 0:
+        raise _not_found(repository_id)
+
+
 class RepoRepository:
     """CRUD de repositórios cadastrados."""
 
@@ -28,55 +37,42 @@ class RepoRepository:
 
     def create(self, data: RepositoryCreate) -> RepositoryRead:
         """Cadastra um repositório; falha se `full_name` e branch já existirem."""
-        now = datetime.now(UTC).isoformat()
         try:
-            with self._db.transaction() as conn:
-                cursor = conn.execute(
-                    "INSERT INTO repositories (full_name, branch, created_at)"
-                    " VALUES (?, ?, ?)",
-                    (data.full_name, data.branch, now),
-                )
+            cursor = self._db.execute(
+                "INSERT INTO repositories (full_name, branch, created_at) VALUES (?, ?, ?)",
+                (data.full_name, data.branch, datetime.now(UTC).isoformat()),
+            )
         except sqlite3.IntegrityError as exc:
             raise DuplicateRepositoryError(data.full_name, data.branch) from exc
         return self.get(cursor.lastrowid)
 
     def get(self, repository_id: int) -> RepositoryRead:
         """Busca por id; levanta `NotFoundError` se não existir."""
-        with self._db.transaction() as conn:
-            row = conn.execute(
-                "SELECT * FROM repositories WHERE id = ?", (repository_id,)
-            ).fetchone()
+        row = self._db.fetch_one("SELECT * FROM repositories WHERE id = ?", (repository_id,))
         if row is None:
-            raise NotFoundError(f"Repositório {repository_id} não encontrado.")
+            raise _not_found(repository_id)
         return _to_model(row)
 
     def get_by_full_name(
         self, full_name: str, branch: str | None = None
     ) -> RepositoryRead | None:
         """Busca por `owner/repo` e branch, sem diferenciar maiúsculas e minúsculas."""
-        with self._db.transaction() as conn:
-            row = conn.execute(
-                "SELECT * FROM repositories"
-                " WHERE full_name = ? AND COALESCE(branch, '') = ?",
-                (full_name, branch or ""),
-            ).fetchone()
+        row = self._db.fetch_one(
+            "SELECT * FROM repositories WHERE full_name = ? AND COALESCE(branch, '') = ?",
+            (full_name, branch or ""),
+        )
         return _to_model(row) if row else None
 
     def list(self) -> list[RepositoryRead]:
         """Lista todos os repositórios, em ordem de cadastro."""
-        with self._db.transaction() as conn:
-            rows = conn.execute("SELECT * FROM repositories ORDER BY id").fetchall()
-        return [_to_model(row) for row in rows]
+        return [_to_model(row) for row in self._db.fetch_all("SELECT * FROM repositories ORDER BY id")]
 
     def update_branch(self, repository_id: int, branch: str | None) -> RepositoryRead:
         """Altera a branch lida; `None` volta à branch padrão."""
-        with self._db.transaction() as conn:
-            cursor = conn.execute(
-                "UPDATE repositories SET branch = ? WHERE id = ?",
-                (branch, repository_id),
-            )
-        if cursor.rowcount == 0:
-            raise NotFoundError(f"Repositório {repository_id} não encontrado.")
+        cursor = self._db.execute(
+            "UPDATE repositories SET branch = ? WHERE id = ?", (branch, repository_id)
+        )
+        _require_changed(cursor, repository_id)
         return self.get(repository_id)
 
     def record_collection(
@@ -90,22 +86,15 @@ class RepoRepository:
 
         Sem `commit_sha` (coleta que falhou), o último commit coletado é mantido.
         """
-        at = (collected_at or datetime.now(UTC)).isoformat()
-        with self._db.transaction() as conn:
-            cursor = conn.execute(
-                "UPDATE repositories"
-                " SET last_collected_at = ?, last_collection_status = ?,"
-                " last_commit_sha = COALESCE(?, last_commit_sha)"
-                " WHERE id = ?",
-                (at, status.value, commit_sha, repository_id),
-            )
-        if cursor.rowcount == 0:
-            raise NotFoundError(f"Repositório {repository_id} não encontrado.")
+        cursor = self._db.execute(
+            "UPDATE repositories"
+            " SET last_collected_at = ?, last_collection_status = ?,"
+            " last_commit_sha = COALESCE(?, last_commit_sha)"
+            " WHERE id = ?",
+            ((collected_at or datetime.now(UTC)).isoformat(), status.value, commit_sha, repository_id),
+        )
+        _require_changed(cursor, repository_id)
 
     def delete(self, repository_id: int) -> bool:
         """Remove o repositório e seus relatórios; devolve se existia."""
-        with self._db.transaction() as conn:
-            cursor = conn.execute(
-                "DELETE FROM repositories WHERE id = ?", (repository_id,)
-            )
-        return cursor.rowcount > 0
+        return self._db.execute("DELETE FROM repositories WHERE id = ?", (repository_id,)).rowcount > 0

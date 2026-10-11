@@ -3,29 +3,18 @@
 import logging
 import time
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
-from app.github import GitHubClient, GitHubError, RateLimitError
-from app.models import (
-    CollectionError,
-    CollectionRead,
-    CollectionStatus,
-    Phase,
-    Report,
-    RepositoryRead,
-)
+from app.github import GitHubClient, GitHubError
+from app.models import CollectionError, CollectionRead, CollectionStatus, RepositoryRead
 from app.repositories import RepoRepository, ReportRepository
-from app.services.layout import match_report
-from app.services.report_parser import parse_report
+from app.services.report_source import ReportSource
 
 logger = logging.getLogger(__name__)
 
-_Item = tuple[str, Phase, str]
-
 
 class CollectionService:
-    """Lê os relatórios no GitHub e substitui os dados do repositório de forma atômica."""
+    """Orquestra a coleta: confere o commit, lê os relatórios e substitui os dados de forma atômica."""
 
     def __init__(
         self,
@@ -37,7 +26,7 @@ class CollectionService:
         self._github = github
         self._repos = repos
         self._reports = reports
-        self._max_workers = max_workers
+        self._source = ReportSource(github, max_workers)
 
     def collect_many(
         self,
@@ -62,66 +51,41 @@ class CollectionService:
         repo = self._repos.get(repository_id)
         started = datetime.now(UTC)
         clock = time.perf_counter()
-        head: str | None = None
         try:
             head = self._github.get_head_commit(repo.full_name, repo.branch or "HEAD")
-            if (
-                only_if_changed
-                and head == repo.last_commit_sha
-                and repo.last_collection_status == CollectionStatus.SUCCESS
-            ):
-                return CollectionRead(
-                    repository_id=repo.id,
-                    status=CollectionStatus.UNCHANGED,
-                    started_at=started,
-                    finished_at=datetime.now(UTC),
-                    commit_sha=head,
-                )
+            if only_if_changed and self._is_up_to_date(repo, head):
+                return self._unchanged(repo, started, head)
             # Lê tudo pelo SHA, para que a coleta seja um retrato único do commit.
-            items = self._discover(repo, head)
-            reports, errors = self._read_all(repo, head, items)
+            files = self._source.find(repo, head)
+            reports, errors = self._source.read_all(repo, head, files)
             self._reports.replace_for_repository(repo.id, reports)
         except GitHubError as exc:
-            return self._finish(repo, started, clock, CollectionStatus.FAILED, 0,
-                                [CollectionError(message=str(exc))], None)
+            return self._failed(repo, started, clock, str(exc))
         except Exception as exc:  # falha de persistência: nada foi alterado
             logger.exception("Falha ao gravar a coleta de %s", repo.full_name)
-            return self._finish(repo, started, clock, CollectionStatus.FAILED, 0,
-                                [CollectionError(message=f"Erro ao gravar os dados: {exc}")], None)
-        return self._finish(repo, started, clock, CollectionStatus.SUCCESS, len(items), errors, head)
+            return self._failed(repo, started, clock, f"Erro ao gravar os dados: {exc}")
+        return self._finish(repo, started, clock, CollectionStatus.SUCCESS, len(files), errors, head)
 
-    def _discover(self, repo: RepositoryRead, ref: str) -> list[_Item]:
-        items: list[_Item] = []
-        for path in self._github.list_files(repo.full_name, ref):
-            if match := match_report(path):
-                items.append((path, *match))
-        return items
+    @staticmethod
+    def _is_up_to_date(repo: RepositoryRead, head: str) -> bool:
+        return head == repo.last_commit_sha and repo.last_collection_status == CollectionStatus.SUCCESS
 
-    def _read_all(
-        self, repo: RepositoryRead, ref: str, items: list[_Item]
-    ) -> tuple[list[Report], list[CollectionError]]:
-        errors: list[CollectionError] = []
+    @staticmethod
+    def _unchanged(repo: RepositoryRead, started: datetime, head: str) -> CollectionRead:
+        return CollectionRead(
+            repository_id=repo.id,
+            status=CollectionStatus.UNCHANGED,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            commit_sha=head,
+        )
 
-        def read(item: _Item) -> Report:
-            path, phase, feature = item
-            try:
-                parsed = parse_report(self._github.get_file(repo.full_name, path, ref))
-            except RateLimitError:
-                raise
-            except GitHubError as exc:
-                errors.append(CollectionError(path=path, message=str(exc)))
-                return Report(repository_id=repo.id, phase=phase, feature=feature, path=path)
-            if parsed.generated is None or parsed.verdict is None:
-                errors.append(CollectionError(
-                    path=path, message="Relatório sem `generated` ou `verdict` legível."
-                ))
-            return Report(
-                repository_id=repo.id, phase=phase, feature=feature, path=path,
-                generated=parsed.generated, verdict=parsed.verdict,
-            )
-
-        with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
-            return list(pool.map(read, items)), errors
+    def _failed(
+        self, repo: RepositoryRead, started: datetime, clock: float, message: str
+    ) -> CollectionRead:
+        return self._finish(
+            repo, started, clock, CollectionStatus.FAILED, 0, [CollectionError(message=message)], None
+        )
 
     def _finish(
         self,
@@ -133,6 +97,7 @@ class CollectionService:
         errors: list[CollectionError],
         commit_sha: str | None,
     ) -> CollectionRead:
+        """Registra o resultado no repositório, grava o log e monta a resposta."""
         finished = datetime.now(UTC)
         self._repos.record_collection(repo.id, status, finished, commit_sha)
         logger.info(
