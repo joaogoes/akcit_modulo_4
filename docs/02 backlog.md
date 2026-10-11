@@ -4,7 +4,7 @@ Legenda: **RF** = requisito funcional, **RT** = requisito técnico. A coluna "or
 Cada item só é marcado como concluído (`[x]`) quando todos os seus critérios de aceite (CA) forem atendidos. Itens **parciais** ficam abertos, com os CAs já atendidos marcados e uma nota sobre o que falta.
 O corte dos releases segue a revisão em [05 revisão de planejamento.md](05%20revis%C3%A3o%20de%20planejamento.md).
 
-**Situação em 10/10/2026** (241 testes passando, 100% de cobertura de linhas de `app/`)
+**Situação em 10/10/2026** (253 testes passando, 100% de cobertura de linhas de `app/`)
 
 | Bloco | Concluídos | Parciais | Pendentes | Substituídos |
 |---|---|---|---|---|
@@ -146,6 +146,7 @@ Objetivo: atender aos requisitos não funcionais, validar o aceite e documentar.
   - [x] CA2: `GET /api/trend` devolve pontos semanais e uma série por veredito, calculados só com o banco e sem chamadas ao GitHub (teste automatizado).
   - [x] CA3: o veredito vigente em cada data é o do relatório válido mais recente até ela; a soma das séries em cada ponto é o número de features já avaliadas na fase.
   - [x] CA4: as cores por veredito são as mesmas dos demais gráficos; fase sem relatórios datados mostra um aviso.
+  - [x] CA5: todos os gráficos de tendência têm exatamente as mesmas datas no eixo horizontal (`start` e `end` de `GET /api/trend`, calculados sobre todos os repositórios).
 
 ### Requisitos técnicos
 

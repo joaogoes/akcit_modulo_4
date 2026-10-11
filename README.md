@@ -25,7 +25,7 @@ MVP web, em Python, que consolida o andamento de projetos a partir de relatório
 - Cadastro de repositórios em tempo de execução (`owner/repo` ou URL do GitHub), com branch opcional. O mesmo repositório pode ser cadastrado uma vez por branch.
 - Coleta dos relatórios das fases Requirements, FSpec, DSpec, Code e Tests.
 - **Um gráfico por repositório**, com o total de features por fase e veredito, e a opção **Ver como tabela**.
-- **Ver como tendência**: linhas empilhadas com a evolução semanal das features por veredito, para a fase escolhida (padrão: Tests).
+- **Ver como tendência**: linhas empilhadas com a evolução semanal das features por veredito, para a fase escolhida (padrão: Tests). Todos os gráficos usam as mesmas datas no eixo horizontal.
 - **Atualizar** em cada painel: só coleta se o último commit do branch for diferente do último coletado; o commit lido aparece no painel.
 - Tema claro e escuro, com a escolha salva no navegador.
 - Dois repositórios de exemplo já cadastrados no primeiro uso (veja [Execução](#execução)).
@@ -106,7 +106,7 @@ verdict: Aprovado
 | `DELETE /repositories/{id}` | Remove o repositório e seus relatórios | 204, 404 |
 | `POST /collections` | Coleta `{repository_ids?, only_if_changed?}`; sem corpo, coleta todos | 200, 404, 422 |
 | `GET /api/dashboard?repository_ids=…` | Totais por fase e veredito | 200, 422 |
-| `GET /api/trend?repository_ids=…&phase=…` | Evolução semanal por veredito, só com dados do banco | 200, 422 |
+| `GET /api/trend?repository_ids=…&phase=…&start=…&end=…` | Evolução semanal por veredito, só com dados do banco; `start` e `end` fixam o eixo de datas | 200, 422 |
 
 Falhas do GitHub na coleta (repositório inexistente, limite de requisições, rede) voltam como `status: "failed"` no resultado, com HTTP 200, e não alteram os dados já coletados. Sem mudança desde a última coleta, o resultado de `only_if_changed` é `unchanged`.
 
@@ -114,7 +114,7 @@ Falhas do GitHub na coleta (repositório inexistente, limite de requisições, r
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                                        # 241 testes
+pytest                                        # 253 testes
 pytest --cov=app --cov-report=term-missing    # com cobertura (100% das linhas de app/)
 ```
 
@@ -173,7 +173,7 @@ flowchart LR
 
 - **No desenvolvimento.** O projeto foi construído com o assistente de código Claude (Claude Code), em etapas guiadas por prompts. A pasta [prompts/](prompts/) guarda o pedido de cada etapa (escopo, backlog, modelos, rotas, aplicação, interface, testes, refatoração e este README) e [docs/](docs/) guarda os documentos produzidos. Os commits feitos com o assistente trazem o trailer `Co-Authored-By`.
 - **O que a IA fez.** Redigiu escopo e backlog, escreveu o código e os testes, refatorou e documentou, e propôs decisões de projeto que foram revisadas e ajustadas pela pessoa responsável.
-- **Como foi verificado.** Os testes automatizados (241, com 100% de cobertura de linhas), a coleta contra o GitHub real e a inspeção visual da interface em capturas de tela. Pontos que dependem de informação que só quem usa o projeto tem estão marcados como premissas no escopo.
+- **Como foi verificado.** Os testes automatizados (253, com 100% de cobertura de linhas), a coleta contra o GitHub real e a inspeção visual da interface em capturas de tela. Pontos que dependem de informação que só quem usa o projeto tem estão marcados como premissas no escopo.
 - **Em tempo de execução, o aplicativo não usa IA.** Nenhum serviço de modelo é chamado, e nenhum dado dos relatórios sai do GitHub e do banco local.
 
 ## Limitações
