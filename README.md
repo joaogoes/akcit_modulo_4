@@ -28,7 +28,8 @@ O gráfico usa Chart.js, carregado de `cdnjs.cloudflare.com`; a página precisa 
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest
+pytest                                   # 218 testes
+pytest --cov=app --cov-report=term-missing   # com cobertura
 ```
 
 ## Estrutura
