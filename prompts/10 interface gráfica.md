@@ -1,0 +1,4 @@
+Contexto: Aplicação web já funcional em app/static (index.html, style.css, app.js), com API de repositórios, coleta e dashboard.
+Objetivo: Ajustar a interface gráfica: a barra superior deve ter um ícone de engrenagem que abre o cadastro de repositórios (cadastrar, remover e coletar); a tela principal deve renderizar, ao mesmo tempo, um gráfico de barras empilhadas horizontais por repositório cadastrado, cada um com título e status da última coleta; a opção "Ver como tabela"/"Ver como gráfico" deve ser mantida e valer para todos os gráficos.
+Estilo: HTML, CSS e JavaScript simples com Chart.js, sem novas dependências; acessível (botão com rótulo, foco por teclado, fechamento por Esc); compatível com tema claro e escuro.
+Resposta: Código completo dos arquivos alterados em app/static, e do endpoint em app/api se for necessário.
