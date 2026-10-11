@@ -104,6 +104,11 @@ class TestStaticInterface:
         assert modes == {"chart", "table", "trend"}
         assert all(f'"{mode}"' in script for mode in modes)
 
+    def test_trend_charts_request_the_same_date_limits(self):
+        script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        assert "&start=${all.dates[0]}&end=" in script  # o intervalo comum vem da consulta a todos os repositórios
+        assert "repository_ids=${repo.id}&${phase}${range}" in script
+
     def test_trend_phase_options_cover_every_phase(self):
         page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         assert re.findall(r'<option value="(\w+)"', page) == ["requirements", "fspec", "dspec", "code", "tests"]

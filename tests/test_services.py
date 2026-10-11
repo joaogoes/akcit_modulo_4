@@ -294,3 +294,43 @@ class TestTrendService:
 
         github.get_head_commit = github.list_files = github.get_file = forbidden
         assert trend_service.build(phase=Phase.REQUIREMENTS).dates
+
+
+class TestSharedTrendAxis:
+    """Todos os gráficos de tendência devem usar as mesmas datas no eixo horizontal."""
+
+    @pytest.fixture
+    def two_repositories(self, trend_service, collection_service, repos):
+        for name in ("acme/app", "acme/other"):  # relatórios de 01/01 a 01/02 e só de 01/01
+            collection_service.collect(repos.create(RepositoryCreate(full_name=name)).id)
+
+    def test_without_limits_each_repository_has_its_own_range(self, two_repositories, trend_service):
+        assert len(trend_service.build([1], Phase.REQUIREMENTS).dates) == 6
+        assert trend_service.build([2], Phase.REQUIREMENTS).dates == [date(2026, 1, 1)]
+
+    def test_same_limits_give_every_repository_the_same_dates(self, two_repositories, trend_service):
+        common = trend_service.build(phase=Phase.REQUIREMENTS)  # todos os repositórios
+        start, end = common.dates[0], common.dates[-1]
+        first = trend_service.build([1], Phase.REQUIREMENTS, start, end)
+        second = trend_service.build([2], Phase.REQUIREMENTS, start, end)
+        assert first.dates == second.dates == common.dates
+
+    def test_values_follow_the_report_dates_inside_the_common_axis(self, two_repositories, trend_service):
+        second = trend_service.build([2], Phase.REQUIREMENTS, date(2025, 12, 25), date(2026, 1, 15))
+        assert second.dates == [date(2025, 12, 25), date(2026, 1, 1), date(2026, 1, 8), date(2026, 1, 15)]
+        # a feature só entra na contagem a partir do primeiro relatório e permanece depois
+        assert second.series[0].counts == [0, 1, 1, 1]
+
+    def test_end_is_always_the_last_point(self, two_repositories, trend_service):
+        trend = trend_service.build([1], Phase.REQUIREMENTS, date(2026, 1, 1), date(2026, 1, 10))
+        assert trend.dates == [date(2026, 1, 1), date(2026, 1, 8), date(2026, 1, 10)]
+
+    def test_only_start_or_only_end_never_produces_an_empty_axis(self, two_repositories, trend_service):
+        late_start = trend_service.build([2], Phase.REQUIREMENTS, start=date(2026, 3, 1))
+        early_end = trend_service.build([2], Phase.REQUIREMENTS, end=date(2025, 12, 1))
+        assert late_start.dates == [date(2026, 3, 1)] and late_start.series[0].counts == [1]
+        assert early_end.dates == [date(2025, 12, 1)] and early_end.series == []
+
+    def test_repository_without_reports_stays_empty_even_with_limits(self, two_repositories, trend_service):
+        empty = trend_service.build([1], Phase.TESTS, date(2026, 1, 1), date(2026, 2, 1))
+        assert empty.dates == [] and empty.series == []

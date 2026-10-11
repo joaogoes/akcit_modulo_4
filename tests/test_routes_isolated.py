@@ -194,8 +194,8 @@ class StubTrendService:
     def __init__(self) -> None:
         self.calls: list = []
 
-    def build(self, repository_ids=None, phase=Phase.TESTS):
-        self.calls.append((repository_ids, phase))
+    def build(self, repository_ids=None, phase=Phase.TESTS, start=None, end=None):
+        self.calls.append((repository_ids, phase, start, end))
         return Trend(
             phase=phase, repository_ids=repository_ids or [1], dates=["2026-01-01"],
             series=[TrendSeries(verdict="Aprovado", counts=[3])],
@@ -250,15 +250,26 @@ class TestOtherRoutesWithStubbedServices:
         response = client.get("/api/trend", params={"phase": "code", "repository_ids": [2]})
         assert response.status_code == 200
         assert response.json()["series"][0]["counts"] == [3]
-        assert service.calls == [([2], Phase.CODE)]
+        assert service.calls == [([2], Phase.CODE, None, None)]
 
     def test_trend_defaults_to_tests_phase(self):
         service = StubTrendService()
         build_app({get_trend_service: lambda: service}).get("/api/trend")
-        assert service.calls == [(None, Phase.TESTS)]
+        assert service.calls == [(None, Phase.TESTS, None, None)]
 
     def test_trend_unknown_phase_returns_422_without_calling_the_service(self):
         service = StubTrendService()
         response = build_app({get_trend_service: lambda: service}).get("/api/trend", params={"phase": "x"})
         assert response.status_code == 422
         assert service.calls == []
+
+
+class TestTrendLimitsAreForwarded:
+    def test_start_and_end_reach_the_service_as_dates(self):
+        from datetime import date
+
+        service = StubTrendService()
+        client = build_app({get_trend_service: lambda: service})
+        response = client.get("/api/trend", params={"start": "2026-01-01", "end": "2026-02-01"})
+        assert response.status_code == 200
+        assert service.calls == [(None, Phase.TESTS, date(2026, 1, 1), date(2026, 2, 1))]

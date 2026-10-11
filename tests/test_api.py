@@ -175,3 +175,22 @@ class TestTrendApi:
         only = self.trend(client, phase="requirements", repository_ids=[2])
         assert only["repository_ids"] == [2]
         assert only["series"] == [{"verdict": "Aprovado", "counts": [1]}]
+
+
+    def test_start_and_end_give_every_repository_the_same_dates(self, client):
+        add(client, "acme/app")
+        add(client, "acme/other")
+        client.post("/collections")
+        common = self.trend(client, phase="requirements")
+        limits = {"start": common["dates"][0], "end": common["dates"][-1]}
+        first = self.trend(client, phase="requirements", repository_ids=[1], **limits)
+        second = self.trend(client, phase="requirements", repository_ids=[2], **limits)
+        assert first["dates"] == second["dates"] == common["dates"]
+        assert len(second["series"][0]["counts"]) == len(common["dates"])
+
+    @pytest.mark.parametrize(
+        "params",
+        [{"start": "2026-02-01", "end": "2026-01-01"}, {"start": "ontem"}, {"end": "2026-13-01"}],
+    )
+    def test_invalid_limits_return_422(self, client, params):
+        assert client.get("/api/trend", params=params).status_code == 422

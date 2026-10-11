@@ -16,5 +16,8 @@ def get_trend(
     query: Annotated[TrendQuery, Query()],
     service: Annotated[TrendService, Depends(get_trend_service)],
 ) -> Trend:
-    """Evolução semanal das features de uma fase por veredito; lê só o banco."""
-    return service.build(query.repository_ids, query.phase)
+    """Evolução semanal das features de uma fase por veredito; lê só o banco.
+
+    `start` e `end` fixam o eixo de datas, para que vários repositórios usem as mesmas datas.
+    """
+    return service.build(query.repository_ids, query.phase, query.start, query.end)

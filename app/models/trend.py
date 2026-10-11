@@ -15,6 +15,21 @@ class TrendQuery(BaseModel):
         description="Se omitido, agrega todos os repositórios.",
     )
     phase: Phase = Field(default=Phase.TESTS, description="Fase acompanhada.")
+    start: date | None = Field(
+        default=None,
+        description="Primeira data do eixo; por padrão, a do primeiro relatório válido.",
+    )
+    end: date | None = Field(
+        default=None,
+        description="Última data do eixo; por padrão, a do último relatório válido.",
+    )
+
+    @model_validator(mode="after")
+    def check_range(self) -> "TrendQuery":
+        """`end` não pode ser anterior a `start`."""
+        if self.start and self.end and self.end < self.start:
+            raise ValueError("`end` não pode ser anterior a `start`.")
+        return self
 
 
 class TrendSeries(BaseModel):

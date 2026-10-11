@@ -206,11 +206,15 @@ async function refreshAll() {
   renderPage();
 }
 
+/** Carrega a tendência de cada repositório, todas com o mesmo eixo de datas. */
 async function loadTrends() {
+  const phase = `phase=${state.trendPhase}`;
+  const all = await api("GET", `/api/trend?${phase}`); // todos os repositórios: dá o intervalo comum
+  const range = all.dates.length ? `&start=${all.dates[0]}&end=${all.dates[all.dates.length - 1]}` : "";
   const entries = await Promise.all(
     state.repos.map(async (repo) => [
       repo.id,
-      await api("GET", `/api/trend?repository_ids=${repo.id}&phase=${state.trendPhase}`),
+      await api("GET", `/api/trend?repository_ids=${repo.id}&${phase}${range}`),
     ])
   );
   state.trends = new Map(entries);
@@ -500,6 +504,7 @@ const shortDate = (iso) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 
 function buildTrendChart(canvas, trend) {
+  const tickStep = Math.max(1, Math.ceil(trend.dates.length / 8));
   const series = [...trend.series].sort((a, b) => ensureSlot(a.verdict) - ensureSlot(b.verdict));
   return new Chart(canvas, {
     type: "line",
@@ -530,7 +535,13 @@ function buildTrendChart(canvas, trend) {
       interaction: { mode: "index", intersect: false },
       scales: {
         x: {
-          ticks: { maxTicksLimit: 8, maxRotation: 0, color: cssVar("--muted") },
+          // Rótulos escolhidos pelo número de pontos, não pela largura: todos os gráficos mostram as mesmas datas.
+          ticks: {
+            autoSkip: false,
+            maxRotation: 0,
+            color: cssVar("--muted"),
+            callback: (_, index) => (index % tickStep === 0 ? shortDate(trend.dates[index]) : ""),
+          },
           grid: { display: false },
           border: { color: cssVar("--axis") },
         },

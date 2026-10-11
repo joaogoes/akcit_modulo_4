@@ -27,9 +27,16 @@ class TrendService:
         self._reports = reports
 
     def build(
-        self, repository_ids: Sequence[int] | None = None, phase: Phase = Phase.TESTS
+        self,
+        repository_ids: Sequence[int] | None = None,
+        phase: Phase = Phase.TESTS,
+        start: date | None = None,
+        end: date | None = None,
     ) -> Trend:
         """Pontos semanais do primeiro ao último relatório válido da fase.
+
+        `start` e `end` fixam o eixo de datas; com os mesmos valores, repositórios
+        diferentes recebem exatamente as mesmas datas e podem ser comparados.
 
         Em cada data, vale o relatório válido mais recente de cada feature até
         aquele dia; features sem relatório válido ainda não entram na contagem.
@@ -41,7 +48,7 @@ class TrendService:
             return Trend(phase=phase, repository_ids=ids, dates=[], series=[])
 
         days = [day for stamps, _ in timelines for day in stamps]
-        points = self._points(min(days), max(days))
+        points = self._points(*self._bounds(days, start, end))
         return Trend(
             phase=phase, repository_ids=ids, dates=points, series=self._series(timelines, points)
         )
@@ -71,6 +78,16 @@ class TrendService:
             TrendSeries(verdict=label, counts=counts[label])
             for label in sorted(counts, key=str.casefold)
         ]
+
+    @staticmethod
+    def _bounds(days: list[date], start: date | None, end: date | None) -> tuple[date, date]:
+        """Primeira e última data do eixo; os limites informados prevalecem sobre os dos relatórios."""
+        first, last = start or min(days), end or max(days)
+        if end is None:
+            last = max(last, first)
+        elif start is None:
+            first = min(first, last)
+        return first, last
 
     @staticmethod
     def _points(first: date, last: date) -> list[date]:
