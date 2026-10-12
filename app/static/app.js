@@ -10,8 +10,22 @@ const PHASE_LABELS = {
 const INVALID_LABEL = "Inválido";
 const OTHER_LABEL = "Outros";
 const MAX_SLOTS = 8;
-// Vereditos conhecidos usam cores com sentido (azul, âmbar, vermelho); os demais seguem a ordem da paleta.
-const PREFERRED_SLOTS = new Map([["aprovado", 0], ["aprovado com ressalvas", 3], ["reprovado", 7]]);
+const BORDER_WIDTH = 0.5; // contorno super fino das barras e das linhas da tendência, em pixels
+// Vereditos conhecidos usam cores com sentido: verde (aprovado; a API já reúne sucesso e success nele), âmbar (com ressalvas) e vermelho
+// (reprovado). Os demais seguem a ordem da paleta, sem repetir essas posições.
+const GREEN_SLOT = 5;
+const PREFERRED_SLOTS = new Map([
+  ["aprovado", GREEN_SLOT],
+  ["aprovado com ressalvas", 3],
+  ["reprovado", 7],
+]);
+// Ordem de empilhamento e da legenda: bons primeiro, depois ressalvas, reprovados e os demais.
+const VERDICT_ORDER = new Map([["aprovado", 0], ["aprovado com ressalvas", 1], ["reprovado", 2]]);
+
+function compareVerdicts(a, b) {
+  const rank = (verdict) => VERDICT_ORDER.get(verdict.trim().toLowerCase()) ?? 3;
+  return rank(a) - rank(b) || a.localeCompare(b, "pt-BR");
+}
 
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -347,7 +361,7 @@ function assignSlots() {
     }
   }
   for (const verdict of [...found].sort((a, b) => a.localeCompare(b, "pt-BR"))) ensureSlot(verdict);
-  return [...found].sort((a, b) => state.slots.get(a) - state.slots.get(b));
+  return [...found].sort(compareVerdicts);
 }
 
 function colorOf(verdict) {
@@ -492,15 +506,6 @@ function buildTable(dashboard, series) {
   return table;
 }
 
-function luminance(hex) {
-  const n = parseInt(hex.replace("#", ""), 16);
-  const channel = (v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
-}
-
 /** Valor dentro do segmento, somente quando o texto cabe com folga. */
 const segmentLabels = {
   id: "segmentLabels",
@@ -510,13 +515,14 @@ const segmentLabels = {
     ctx.font = "600 12px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    const textColor = cssVar("--text"); // o fundo é translúcido, então o texto do tema sempre contrasta
     chart.data.datasets.forEach((dataset, i) => {
       chart.getDatasetMeta(i).data.forEach((bar, j) => {
         const value = dataset.data[j];
         if (!value) return;
         const text = String(value);
         if (bar.width < ctx.measureText(text).width + 16) return;
-        ctx.fillStyle = luminance(dataset.backgroundColor) > 0.35 ? "#0b0b0b" : "#ffffff";
+        ctx.fillStyle = textColor;
         ctx.fillText(text, bar.x - bar.width / 2, bar.y);
       });
     });
@@ -530,16 +536,19 @@ function buildChart(canvas, dashboard, series) {
     plugins: [segmentLabels],
     data: {
       labels: dashboard.phases.map((phase) => PHASE_LABELS[phase.phase]),
-      datasets: series.map((item) => ({
-        label: item.label,
-        data: item.data,
-        backgroundColor: cssVar(colorOf(item.label)),
-        borderColor: cssVar("--surface"),
-        borderWidth: 2,
-        borderRadius: 4,
-        borderSkipped: false,
-        maxBarThickness: 24,
-      })),
+      datasets: series.map((item) => {
+        const color = cssVar(colorOf(item.label));
+        return {
+          label: item.label,
+          data: item.data,
+          backgroundColor: withAlpha(color, 0.35), // o mesmo aspecto da tendência: área translúcida com contorno na cor exata
+          borderColor: color,
+          borderWidth: BORDER_WIDTH,
+          borderRadius: 4,
+          borderSkipped: false,
+          maxBarThickness: 24,
+        };
+      }),
     },
     options: {
       indexAxis: "y",
@@ -575,6 +584,7 @@ function buildChart(canvas, dashboard, series) {
   });
 }
 
+/** A mesma cor das barras, com transparência: é o preenchimento das áreas da tendência. */
 function withAlpha(hex, alpha) {
   const n = parseInt(hex.replace("#", ""), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
@@ -606,7 +616,7 @@ const shortDate = (iso) =>
 
 function buildTrendChart(canvas, trend) {
   const tickStep = Math.max(1, Math.ceil(trend.dates.length / 8));
-  const series = [...trend.series].sort((a, b) => ensureSlot(a.verdict) - ensureSlot(b.verdict));
+  const series = [...trend.series].sort((a, b) => compareVerdicts(a.verdict, b.verdict));
   return new Chart(canvas, {
     type: "line",
     data: {
@@ -618,8 +628,8 @@ function buildTrendChart(canvas, trend) {
           data: item.counts,
           fill: index === 0 ? "origin" : "-1", // cada faixa vai até a linha de baixo, sem sobreposição
           borderColor: color,
-          backgroundColor: withAlpha(color, 0.35),
-          borderWidth: 2,
+          backgroundColor: withAlpha(color, 0.35), // áreas translúcidas; as linhas mantêm a cor exata das barras
+          borderWidth: BORDER_WIDTH,
           pointRadius: 0,
           pointHoverRadius: 4,
           pointHoverBackgroundColor: color,

@@ -283,8 +283,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { padding: 8px; border-bottom: 1px solid var(--grid); text-align: right; }
-th:first-child, td:first-child { text-align: left; }
+th, td { padding: 8px; border-bottom: 1px solid var(--grid); text-align: center; }  /* valores e títulos centralizados */
+th:first-child, td:first-child { text-align: left; }  /* só a coluna das fases fica à esquerda */
 th { color: var(--text-2); font-weight: 600; }
 td { font-variant-numeric: tabular-nums; }
 
@@ -301,7 +301,7 @@ td { font-variant-numeric: tabular-nums; }
 .toast {
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
+  border-left: 4px solid var(--ok);
   border-radius: 6px;
   background: var(--surface);
   color: var(--text);

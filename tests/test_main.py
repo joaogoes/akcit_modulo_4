@@ -90,6 +90,13 @@ class TestStaticInterface:
     def test_static_assets_are_served(self, client, name):
         assert client.get(f"/static/{name}").status_code == 200
 
+    @pytest.mark.parametrize("path", ["/", "/static/app.js", "/static/style.css", "/static/index.html"])
+    def test_interface_files_are_revalidated_so_a_new_version_is_never_stale(self, client, path):
+        assert client.get(path).headers["cache-control"] == "no-cache"
+
+    def test_api_responses_are_not_marked_for_revalidation(self, client):
+        assert "cache-control" not in client.get("/repositories").headers
+
     def test_every_element_id_used_by_the_script_exists_in_the_page(self):
         script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -108,6 +115,31 @@ class TestStaticInterface:
         script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         assert "&start=${all.dates[0]}&end=" in script  # o intervalo comum vem da consulta a todos os repositórios
         assert "repository_ids=${repo.id}&${phase}${range}" in script
+
+    def test_approved_verdict_uses_the_green_color_slot(self):
+        script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        css = (STATIC_DIR / "style.css").read_text(encoding="utf-8")
+        assert "const GREEN_SLOT = 5;" in script
+        assert '["aprovado", GREEN_SLOT]' in script  # Sucesso e Success chegam como "Aprovado" (ver test_services)
+        assert '["reprovado", 7]' in script  # vermelho
+        assert re.search(r"--s6:\s*#008300", css)  # a posição 6 da paleta é verde, nos dois temas
+        assert "border-left: 4px solid var(--ok);" in css  # mensagens de sucesso em verde
+
+    def test_bars_and_trend_share_the_same_translucent_look(self):
+        script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        # barras e tendência: preenchimento com a cor a 35% de opacidade e contorno na cor exata
+        assert script.count("backgroundColor: withAlpha(color, 0.35)") == 2
+        assert script.count("borderColor: color,") == 2
+        assert "const BORDER_WIDTH = 0.5;" in script  # contorno super fino
+        assert script.count("borderWidth: BORDER_WIDTH,") == 2  # barras e tendência, o mesmo traço
+        assert re.search(r"const color = cssVar\(colorOf\(item\.label\)\);", script)  # barras
+        assert re.search(r"const color = cssVar\(colorOf\(item\.verdict\)\);", script)  # tendência
+        assert "luminance(" not in script  # o número usa a cor do texto do tema, não depende de fundo sólido
+
+    def test_table_values_and_headings_are_centered_and_the_phase_column_stays_left(self):
+        css = (STATIC_DIR / "style.css").read_text(encoding="utf-8")
+        assert re.search(r"th, td \{[^}]*text-align: center;", css)
+        assert re.search(r"th:first-child, td:first-child \{ text-align: left;", css)
 
     def test_trend_phase_options_cover_every_phase(self):
         page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
