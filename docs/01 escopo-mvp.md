@@ -56,7 +56,7 @@ Cada relatório contém dois campos, lidos do conteúdo do arquivo:
 - **RF-15** O valor absoluto de cada segmento é visível, no rótulo ou em tooltip.
 - **RF-16** O gráfico agrega os dados de todos os repositórios cadastrados. O usuário pode filtrar por um ou mais repositórios.
 - **RF-17** A lista de vereditos é derivada dos valores encontrados nos relatórios. O sistema não depende de um conjunto fixo de valores. O rótulo "Inválido" é reservado ao sistema (RF-09) e exibido sempre como último segmento da barra.
-- **RF-18** Normalização de vereditos: comparação sem diferenciar maiúsculas/minúsculas e sem espaços nas extremidades. O rótulo exibido é a primeira grafia encontrada.
+- **RF-18** Normalização de vereditos: comparação sem diferenciar maiúsculas/minúsculas e sem espaços nas extremidades. O rótulo exibido é a primeira grafia encontrada, com uma exceção: **Aprovado, Sucesso, Success, Approved, Passed e OK** (em qualquer combinação de maiúsculas e minúsculas) são sempre exibidos como **Aprovado** e contados juntos, na contagem por fase e na tendência.
 
 ## 4. Requisitos não funcionais
 

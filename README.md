@@ -24,9 +24,10 @@ MVP web, em Python, que consolida o andamento de projetos a partir de relatório
 
 - Cadastro de repositórios em tempo de execução, com branch opcional: `owner/repo` ou URL do GitHub, ou URL do Azure DevOps (`https://dev.azure.com/org/projeto/_git/repo`). O mesmo repositório pode ser cadastrado uma vez por branch.
 - Coleta dos relatórios das fases Requirements, FSpec, DSpec, Code e Tests.
-- **Um gráfico por repositório**, com o total de features por fase e veredito, e a opção **Ver como tabela**.
+- **Um gráfico por repositório**, com o total de features por fase e veredito, e a opção **Ver como tabela** (valores centralizados).
 - **Ver como tendência**: linhas empilhadas com a evolução semanal das features por veredito, para a fase escolhida (padrão: Tests). Todos os gráficos usam as mesmas datas no eixo horizontal.
 - **Atualizar** em cada painel: só coleta se o último commit do branch for diferente do último coletado; o commit lido aparece no painel.
+- Cores com sentido, com **a mesma aparência translúcida nas barras e na tendência** (preenchimento a 35% de opacidade e contorno super fino, de 0,5 px, na cor exata): **verde** para Aprovado (que reúne Sucesso, Success, Approved, Passed e OK), âmbar para Aprovado com ressalvas, vermelho para Reprovado e cinza para Inválido.
 - Tema claro e escuro, com a escolha salva no navegador.
 - Dois repositórios de exemplo já cadastrados no primeiro uso (veja [Execução](#execução)).
 
@@ -97,7 +98,7 @@ verdict: Aprovado
 - `generated` aceita ISO 8601 (data ou data e hora); sem fuso, assume UTC.
 - Uma feature tem no máximo um veredito por fase: o do relatório **válido** mais recente. Válido é o que tem `verdict` e `generated` legíveis.
 - Feature cujos relatórios na fase são todos inválidos aparece como **Inválido**.
-- Vereditos que diferem só em maiúsculas e minúsculas são agrupados, com a primeira grafia vista.
+- Vereditos que diferem só em maiúsculas e minúsculas são agrupados, com a primeira grafia vista. **Aprovado, Sucesso, Success, Approved, Passed e OK** são sempre reportados como **Aprovado** e contados juntos.
 - Pasta inexistente conta como zero features. Subpastas dentro da pasta de relatórios são ignoradas.
 - O mesmo nome de feature em dois repositórios conta duas vezes.
 - A coleta lê tudo pelo SHA do commit, então os dados são um retrato único daquele commit. Se a coleta falhar, os dados anteriores são mantidos.
@@ -124,7 +125,7 @@ Falhas do GitHub na coleta (repositório inexistente, limite de requisições, r
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                                        # 351 testes
+pytest                                        # 365 testes
 pytest --cov=app --cov-report=term-missing    # com cobertura (100% das linhas de app/)
 ```
 
@@ -185,7 +186,7 @@ flowchart LR
 
 - **No desenvolvimento.** O projeto foi construído com o assistente de código Claude (Claude Code), em etapas guiadas por prompts. A pasta [prompts/](prompts/) guarda o pedido de cada etapa (escopo, backlog, modelos, rotas, aplicação, interface, testes, refatoração e este README) e [docs/](docs/) guarda os documentos produzidos. Os commits feitos com o assistente trazem o trailer `Co-Authored-By`.
 - **O que a IA fez.** Redigiu escopo e backlog, escreveu o código e os testes, refatorou e documentou, e propôs decisões de projeto que foram revisadas e ajustadas pela pessoa responsável.
-- **Como foi verificado.** Os testes automatizados (351, com 100% de cobertura de linhas e de ramos), a coleta contra o GitHub real e a inspeção visual da interface em capturas de tela. Pontos que dependem de informação que só quem usa o projeto tem estão marcados como premissas no escopo.
+- **Como foi verificado.** Os testes automatizados (365, com 100% de cobertura de linhas e de ramos), a coleta contra o GitHub real e a inspeção visual da interface em capturas de tela. Pontos que dependem de informação que só quem usa o projeto tem estão marcados como premissas no escopo.
 - **Em tempo de execução, o aplicativo não usa IA.** Nenhum serviço de modelo é chamado, e nenhum dado dos relatórios sai do GitHub e do banco local.
 
 ## Limitações

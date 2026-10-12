@@ -4,7 +4,7 @@ Legenda: **RF** = requisito funcional, **RT** = requisito técnico. A coluna "or
 Cada item só é marcado como concluído (`[x]`) quando todos os seus critérios de aceite (CA) forem atendidos. Itens **parciais** ficam abertos, com os CAs já atendidos marcados e uma nota sobre o que falta.
 O corte dos releases segue a revisão em [05 revisão de planejamento.md](05%20revis%C3%A3o%20de%20planejamento.md).
 
-**Situação em 10/10/2026** (351 testes passando, 100% de cobertura de linhas de `app/`)
+**Situação em 10/10/2026** (365 testes passando, 100% de cobertura de linhas de `app/`)
 
 | Bloco | Concluídos | Parciais | Pendentes | Substituídos |
 |---|---|---|---|---|
@@ -50,8 +50,8 @@ Objetivo: **uma fase de ponta a ponta**, do cadastro ao gráfico. O código já 
   - [x] CA4: datas ISO 8601 (data e data/hora, com e sem fuso) são aceitas; sem fuso assume UTC; formato inválido torna o relatório inválido.
 - [x] **RF-R1-04 – Gráfico de barras empilhadas horizontais** (origem: RF-12, RF-13, RF-14, RF-15, RF-17)
   - [x] CA1: uma barra por fase, na ordem Requirements → FSpec → DSpec → Code → Tests.
-  - [x] CA2: segmentos por veredito, com cor fixa por veredito e legenda.
-  - [x] CA3: ordem dos segmentos fixa e estável, pela posição de cor de cada veredito (Aprovado, Aprovado com ressalvas e Reprovado têm posições fixas), com "Inválido" por último. A API devolve os vereditos em ordem alfabética.
+  - [x] CA2: segmentos por veredito, com cor fixa por veredito e legenda. Aprovado é verde (Sucesso, Success, Approved, Passed e OK são reportados como Aprovado), Aprovado com ressalvas é âmbar e Reprovado é vermelho.
+  - [x] CA3: ordem dos segmentos fixa e estável: Aprovado, Aprovado com ressalvas, Reprovado, os demais vereditos em ordem alfabética e "Inválido" por último. A API devolve os vereditos em ordem alfabética.
   - [x] CA4: o valor de cada segmento é visível em rótulo ou tooltip.
   - [x] CA5: os totais coincidem com a contagem esperada dos dados de teste.
 
@@ -157,7 +157,7 @@ Objetivo: atender aos requisitos não funcionais, validar o aceite e documentar.
   - [x] CA1: o modo **Ver como tendência** exibe um gráfico de linhas empilhadas por repositório, com seletor de fase (padrão Tests).
   - [x] CA2: `GET /api/trend` devolve pontos semanais e uma série por veredito, calculados só com o banco e sem chamadas ao GitHub (teste automatizado).
   - [x] CA3: o veredito vigente em cada data é o do relatório válido mais recente até ela; a soma das séries em cada ponto é o número de features já avaliadas na fase.
-  - [x] CA4: as cores por veredito são as mesmas dos demais gráficos; fase sem relatórios datados mostra um aviso.
+  - [x] CA4: barras e tendência têm exatamente a mesma aparência: preenchimento com a cor do veredito a 35% de opacidade e contorno super fino (0,5 px) na cor exata (verde, âmbar e vermelho; conferido pixel a pixel no navegador); fase sem relatórios datados mostra um aviso.
   - [x] CA5: todos os gráficos de tendência têm exatamente as mesmas datas no eixo horizontal (`start` e `end` de `GET /api/trend`, calculados sobre todos os repositórios).
 
 ### Requisitos técnicos
