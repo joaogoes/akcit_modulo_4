@@ -5,14 +5,25 @@ from collections.abc import Iterable
 from app.models import Report
 
 
+APPROVED_LABEL = "Aprovado"
+# Vereditos que significam aprovação e são sempre exibidos como "Aprovado" (RF-18).
+_APPROVED_ALIASES = frozenset({"aprovado", "sucesso", "success", "approved", "passed", "ok"})
+
+
 class VerdictLabels:
-    """Guarda a primeira grafia vista de cada veredito, sem diferenciar maiúsculas (RF-18)."""
+    """Rótulo exibido de cada veredito (RF-18).
+
+    Aprovado, Sucesso, Success, Approved, Passed e OK viram "Aprovado". Os demais mantêm a primeira
+    grafia vista, sem diferenciar maiúsculas.
+    """
 
     def __init__(self) -> None:
         self._spelling: dict[str, str] = {}
 
     def of(self, report: Report) -> str:
-        """Rótulo canônico do veredito de um relatório válido."""
+        """Rótulo do veredito de um relatório válido."""
+        if report.verdict_key in _APPROVED_ALIASES:
+            return APPROVED_LABEL
         return self._spelling.setdefault(report.verdict_key, report.verdict)
 
 

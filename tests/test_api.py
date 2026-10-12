@@ -147,6 +147,20 @@ class TestDashboardApi:
         assert collected_client.get("/api/dashboard", params={"repository_ids": ["x"]}).status_code == 422
 
 
+class TestApprovedAliasesApi:
+    def test_success_sucesso_and_aprovado_are_reported_as_aprovado(self, client, github):
+        github.repositories["acme/app"] = {
+            REQ.format(feature=name, name="r"): report_text("2026-01-01", verdict)
+            for name, verdict in (("a", "SUCCESS"), ("b", "Sucesso"), ("c", "Aprovado"), ("d", "Reprovado"))
+        }
+        add(client)
+        client.post("/collections")
+        dashboard = client.get("/api/dashboard").json()
+        assert counts(dashboard, "requirements") == {"Aprovado": 3, "Reprovado": 1}
+        trend = client.get("/api/trend", params={"phase": "requirements"}).json()
+        assert {item["verdict"] for item in trend["series"]} == {"Aprovado", "Reprovado"}
+
+
 class TestTrendApi:
     def trend(self, client, **params):
         response = client.get("/api/trend", params=params)

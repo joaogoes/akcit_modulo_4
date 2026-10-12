@@ -334,3 +334,54 @@ class TestSharedTrendAxis:
     def test_repository_without_reports_stays_empty_even_with_limits(self, two_repositories, trend_service):
         empty = trend_service.build([1], Phase.TESTS, date(2026, 1, 1), date(2026, 2, 1))
         assert empty.dates == [] and empty.series == []
+
+
+APPROVED_SPELLINGS = [
+    "Aprovado", "aprovado", "APROVADO ", "Sucesso", "SUCESSO", "Success", "SUCCESS", " success ",
+    "Approved", "APPROVED", "Passed", "passed", "OK", "ok",
+]
+
+
+class TestApprovedAliases:
+    """Aprovado, Sucesso e Success são sempre reportados como "Aprovado"."""
+
+    @pytest.fixture
+    def spellings(self, collection_service, repos, github):
+        files = {
+            REQ.format(feature=f"f{i}", name="r"): report_text("2026-01-01", spelling)
+            for i, spelling in enumerate(APPROVED_SPELLINGS)
+        }
+        files[REQ.format(feature="outra", name="r")] = report_text("2026-01-02", "Aprovado com ressalvas")
+        github.repositories["acme/aliases"] = files
+        collection_service.collect(repos.create(RepositoryCreate(full_name="acme/aliases")).id)
+
+    def test_dashboard_counts_every_spelling_under_a_single_aprovado(self, spellings, dashboard_service):
+        assert verdicts(dashboard_service.build(), "requirements") == {
+            "Aprovado": len(APPROVED_SPELLINGS),
+            "Aprovado com ressalvas": 1,
+        }
+
+    def test_the_label_does_not_depend_on_which_spelling_comes_first(self, collection_service, repos, github, dashboard_service):
+        github.repositories["acme/primeiro"] = {
+            REQ.format(feature="a", name="r"): report_text("2026-01-01", "SUCCESS"),
+            REQ.format(feature="b", name="r"): report_text("2026-01-01", "Aprovado"),
+        }
+        collection_service.collect(repos.create(RepositoryCreate(full_name="acme/primeiro")).id)
+        assert verdicts(dashboard_service.build(), "requirements") == {"Aprovado": 2}
+
+    def test_trend_merges_the_spellings_into_one_series(self, spellings, trend_service):
+        series = {s.verdict: s.counts for s in trend_service.build(phase=Phase.REQUIREMENTS).series}
+        assert set(series) == {"Aprovado", "Aprovado com ressalvas"}
+        assert series["Aprovado"][-1] == len(APPROVED_SPELLINGS)
+
+    def test_a_feature_that_moves_from_failure_to_success_is_counted_as_aprovado(self, collection_service, repos, github, dashboard_service):
+        github.repositories["acme/virada"] = {
+            REQ.format(feature="x", name="r1"): report_text("2026-01-01", "Reprovado"),
+            REQ.format(feature="x", name="r2"): report_text("2026-02-01", "Success"),
+        }
+        collection_service.collect(repos.create(RepositoryCreate(full_name="acme/virada")).id)
+        assert verdicts(dashboard_service.build(), "requirements") == {"Aprovado": 1}
+
+    def test_stored_reports_keep_the_original_wording(self, spellings, reports):
+        stored = {report.verdict for report in reports.list() if report.feature.startswith("f")}
+        assert {"Success", "SUCCESS", "Sucesso"} <= stored  # só a exibição é normalizada
